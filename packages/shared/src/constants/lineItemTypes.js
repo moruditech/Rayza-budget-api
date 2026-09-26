@@ -1,0 +1,6 @@
+const LINE_ITEM_TYPES = {
+  INSTANT_SPEND: 'INSTANT_SPEND',
+  SINKING_FUND: 'SINKING_FUND',
+};
+
+module.exports = { LINE_ITEM_TYPES };

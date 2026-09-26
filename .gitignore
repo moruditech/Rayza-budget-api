@@ -1,0 +1,14 @@
+node_modules/
+dist/
+build/
+coverage/
+.turbo/
+*.log
+.DS_Store
+
+# Environment files — real secrets only.
+# .env.example and .env.test contain no real secrets and are committed.
+.env
+.env.local
+!.env.example
+!.env.test
