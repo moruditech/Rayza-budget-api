@@ -30,6 +30,34 @@ async function listSpendLog(userId, query) {
     SpendLog.countDocuments(filter),
   ]);
 
+  // Transfers are stored as an OUT and an IN entry sharing a transferId —
+  // look up the other side so each entry can say where the money came
+  // from / went to (works for older transfers too).
+  const transferIds = entries.filter((e) => e.transferId).map((e) => e.transferId);
+  const counterpartsByTransfer = new Map();
+  if (transferIds.length > 0) {
+    const others = await SpendLog.find({ userId, transferId: { $in: transferIds } })
+      .populate('potId', 'name')
+      .populate('lineItemId', 'name')
+      .lean();
+    for (const o of others) {
+      const key = String(o.transferId);
+      if (!counterpartsByTransfer.has(key)) counterpartsByTransfer.set(key, []);
+      counterpartsByTransfer.get(key).push(o);
+    }
+  }
+  const counterpartyOf = (entry) => {
+    if (!entry.transferId) return null;
+    const other = (counterpartsByTransfer.get(String(entry.transferId)) || []).find(
+      (o) => String(o._id) !== String(entry._id)
+    );
+    if (!other) return null;
+    return {
+      lineItemName: other.lineItemId?.name ?? null,
+      potName: other.potId?.name ?? null,
+    };
+  };
+
   const data = entries.map((entry) => ({
     _id: entry._id,
     type: entry.type,
@@ -37,6 +65,8 @@ async function listSpendLog(userId, query) {
     date: entry.date,
     note: entry.note,
     paymentMethod: entry.paymentMethod,
+    transferId: entry.transferId ?? null,
+    counterparty: counterpartyOf(entry),
     pot: entry.potId ? { _id: entry.potId._id, name: entry.potId.name } : null,
     lineItem: entry.lineItemId
       ? { _id: entry.lineItemId._id, name: entry.lineItemId.name }

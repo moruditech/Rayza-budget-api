@@ -180,6 +180,21 @@ describe('Transfers', () => {
     const inLog = await auth(request(app).get(`/api/v1/spend-log?monthId=${month._id}&type=TRANSFER_IN`));
     expect(outLog.body.data).toHaveLength(1);
     expect(inLog.body.data).toHaveLength(1);
+
+    // Each side of the transfer says where the money came from / went to.
+    expect(inLog.body.data[0].counterparty).toMatchObject({ lineItemName: 'Emergency', potName: 'Build Home' });
+    expect(outLog.body.data[0].counterparty).toMatchObject({ lineItemName: 'Personal' });
+
+    // The fund history and the pot totals reflect it too.
+    const detail = await getPot(month, pot);
+    const personal = detail.lineItems.find((li) => li.name === 'Personal');
+    expect(personal.activity[0]).toMatchObject({
+      type: 'TRANSFER_IN',
+      amount: 1500,
+      counterparty: { lineItemName: 'Emergency' },
+    });
+    expect(detail.transferredIn).toBe(1500);
+    expect(detail.transferredOut).toBe(1500);
   });
 
   it('rejects same-fund and over-balance transfers', async () => {

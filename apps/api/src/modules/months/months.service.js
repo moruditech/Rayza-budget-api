@@ -1,4 +1,6 @@
 const mongoose = require('mongoose');
+const { SPEND_LOG_TYPES } = require('@budget-app/shared');
+const SpendLog = require('../../models/SpendLog.model');
 const Month = require('../../models/Month.model');
 const Income = require('../../models/Income.model');
 const Pot = require('../../models/Pot.model');
@@ -54,19 +56,92 @@ async function listMonths(userId) {
   }));
 }
 
+const FUND_ACTIVITY_TYPES = [
+  SPEND_LOG_TYPES.SINKING_FUND_USED,
+  SPEND_LOG_TYPES.TRANSFER_IN,
+  SPEND_LOG_TYPES.TRANSFER_OUT,
+];
+const MAX_ACTIVITY_PER_FUND = 20;
+
+/**
+ * Per-fund history (withdrawals, money received, money moved out) plus each
+ * pot's received/sent totals. The other side of a transfer is found through
+ * the shared transferId, so entries made before this feature existed also
+ * show where the money came from / went to.
+ */
+function buildFundActivity(logs, lineItems, pots) {
+  const itemById = new Map(lineItems.map((li) => [String(li._id), li]));
+  const potById = new Map(pots.map((p) => [String(p._id), p]));
+
+  const byTransfer = new Map();
+  for (const log of logs) {
+    if (!log.transferId) continue;
+    const key = String(log.transferId);
+    if (!byTransfer.has(key)) byTransfer.set(key, []);
+    byTransfer.get(key).push(log);
+  }
+
+  const activityByItem = new Map();
+  const transfersByPot = new Map();
+
+  for (const log of logs) {
+    let counterparty = null;
+    if (log.transferId) {
+      const other = (byTransfer.get(String(log.transferId)) || []).find(
+        (l) => String(l._id) !== String(log._id)
+      );
+      if (other) {
+        counterparty = {
+          lineItemName: itemById.get(String(other.lineItemId))?.name ?? null,
+          potName: potById.get(String(other.potId))?.name ?? null,
+        };
+      }
+    }
+
+    const itemKey = String(log.lineItemId);
+    if (!activityByItem.has(itemKey)) activityByItem.set(itemKey, []);
+    const list = activityByItem.get(itemKey);
+    if (list.length < MAX_ACTIVITY_PER_FUND) {
+      list.push({
+        _id: log._id,
+        type: log.type,
+        amount: log.amount,
+        date: log.date,
+        note: log.note,
+        counterparty,
+      });
+    }
+
+    if (log.type !== SPEND_LOG_TYPES.SINKING_FUND_USED) {
+      const potKey = String(log.potId);
+      const totals = transfersByPot.get(potKey) || { received: 0, sent: 0 };
+      if (log.type === SPEND_LOG_TYPES.TRANSFER_IN) totals.received += log.amount;
+      else totals.sent += log.amount;
+      transfersByPot.set(potKey, totals);
+    }
+  }
+
+  return { activityByItem, transfersByPot };
+}
+
 // FR-08 — get one month with full detail: income, pots, and each pot's
 // line items nested, all computed fields included.
 async function getMonthDetail(userId, monthId) {
   const month = await monthService.getMonthOrThrow(userId, monthId);
 
-  const [income, pots, lineItems, potSpendMap, lineItemSpendMap, potCommittedMap] = await Promise.all([
+  const [income, pots, lineItems, potSpendMap, lineItemSpendMap, potCommittedMap, fundLogs] = await Promise.all([
     Income.find({ userId, monthId: month._id }).sort({ createdAt: 1 }).lean(),
     Pot.find({ userId, monthId: month._id }).sort({ order: 1 }).lean(),
     LineItem.find({ userId, monthId: month._id }).sort({ order: 1 }).lean(),
     potsService.getSpendMapByMonth(userId, month._id),
     lineItemsService.getSpendMapByMonth(userId, month._id),
     potsService.getCommittedMapByMonth(userId, month._id),
+    SpendLog.find({ userId, monthId: month._id, type: { $in: FUND_ACTIVITY_TYPES } })
+      .sort({ date: -1, _id: -1 })
+      .lean(),
   ]);
+
+  const { activityByItem, transfersByPot } = buildFundActivity(fundLogs, lineItems, pots);
 
   const lineItemsByPot = new Map();
   for (const li of lineItems) {
@@ -75,6 +150,9 @@ async function getMonthDetail(userId, monthId) {
       li,
       lineItemSpendMap.get(String(li._id)) || 0
     );
+    if (li.type === 'SINKING_FUND') {
+      serialized.activity = activityByItem.get(String(li._id)) || [];
+    }
     if (!lineItemsByPot.has(key)) lineItemsByPot.set(key, []);
     lineItemsByPot.get(key).push(serialized);
   }
@@ -97,6 +175,8 @@ async function getMonthDetail(userId, monthId) {
         potSpendMap.get(String(pot._id)) || 0,
         potCommittedMap.get(String(pot._id)) || 0
       ),
+      transferredIn: transfersByPot.get(String(pot._id))?.received || 0,
+      transferredOut: transfersByPot.get(String(pot._id))?.sent || 0,
       lineItems: lineItemsByPot.get(String(pot._id)) || [],
     })),
   };
