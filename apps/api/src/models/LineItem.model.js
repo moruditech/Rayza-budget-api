@@ -27,6 +27,11 @@ const lineItemSchema = new mongoose.Schema(
     monthlyContribution: { type: Number, default: null },
     accumulatedBalance: { type: Number, default: 0 },
     isReadyToUse: { type: Boolean, default: false },
+    // Fixed annual interest rate as a percentage (e.g. 7.5 = 7.5% p.a.).
+    // null = this fund earns no interest (e.g. cash left in a bank account).
+    annualInterestRate: { type: Number, default: null, min: 0, max: 100 },
+    // Date the person wants to project the future value to.
+    targetDate: { type: Date, default: null },
 
     cycleHistory: { type: [cycleHistoryEntrySchema], default: [] },
   },
@@ -41,6 +46,8 @@ const lineItemSchema = new mongoose.Schema(
           delete ret.monthlyContribution;
           delete ret.accumulatedBalance;
           delete ret.isReadyToUse;
+          delete ret.annualInterestRate;
+          delete ret.targetDate;
           delete ret.cycleHistory;
         }
         delete ret.__v;
@@ -66,6 +73,9 @@ lineItemSchema.pre('validate', function preValidateSinkingFundFields(next) {
       );
     }
   }
+  if (this.annualInterestRate != null && !this.targetDate) {
+    this.invalidate('targetDate', 'targetDate is required when annualInterestRate is set');
+  }
   next();
 });
 
@@ -80,6 +90,8 @@ lineItemSchema.pre('save', function preSaveNormalize(next) {
     this.monthlyContribution = null;
     this.accumulatedBalance = 0;
     this.isReadyToUse = false;
+    this.annualInterestRate = null;
+    this.targetDate = null;
   } else {
     this.isReadyToUse = this.targetAmount != null && this.accumulatedBalance >= this.targetAmount;
   }

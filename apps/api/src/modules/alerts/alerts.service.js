@@ -33,10 +33,11 @@ async function evaluateAlerts(userId) {
   const month = await getCurrentCalendarMonth(userId);
   if (!month) return [];
 
-  const [pots, spentByPot, readySinkingFunds, totalIncome, totalBudgetLimit, latestSpend] =
+  const [pots, spentByPot, committedByPot, readySinkingFunds, totalIncome, totalBudgetLimit, latestSpend] =
     await Promise.all([
       Pot.find({ userId, monthId: month._id }).lean(),
       potsService.getSpendMapByMonth(userId, month._id),
+      potsService.getCommittedMapByMonth(userId, month._id),
       LineItem.find({
         userId,
         monthId: month._id,
@@ -56,7 +57,8 @@ async function evaluateAlerts(userId) {
   for (const pot of pots) {
     const limit = pot.budgetLimit + pot.rolloverBalance;
     if (limit <= 0) continue;
-    const spent = spentByPot.get(String(pot._id)) || 0;
+    // Money allocated to sinking funds is used budget even though it isn't spent.
+    const spent = (spentByPot.get(String(pot._id)) || 0) + (committedByPot.get(String(pot._id)) || 0);
     const percentUsed = Math.round((spent / limit) * 1000) / 10;
 
     if (spent > limit) {

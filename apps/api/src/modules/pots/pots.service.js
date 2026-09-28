@@ -1,14 +1,23 @@
 const mongoose = require('mongoose');
-const { ERROR_CODES, SPEND_LOG_TYPES } = require('@budget-app/shared');
+const { ERROR_CODES, LINE_ITEM_TYPES, SPEND_LOG_TYPES } = require('@budget-app/shared');
 const Pot = require('../../models/Pot.model');
 const LineItem = require('../../models/LineItem.model');
 const SpendLog = require('../../models/SpendLog.model');
 const ApiError = require('../../utils/ApiError');
 const monthService = require('../../services/month.service');
 
-// spentAmount/surplus are never stored (see Pot.model.js) — always computed
-// here from SpendLog at read time.
-function serializePot(pot, spentAmount = 0) {
+// spentAmount/committedAmount/remaining are never stored (see Pot.model.js)
+// — always computed here at read time.
+//   spentAmount     = instant spend logged against the pot
+//   committedAmount = money allocated to the pot's sinking funds. It has
+//                     left the pot's budget even though it is not spent:
+//                     it sits in a fund (e.g. a Capitec investment plan).
+//   usedAmount      = spentAmount + committedAmount
+//   remaining       = budgetLimit + rolloverBalance - usedAmount
+// `surplus` is kept as an alias of `remaining` for existing consumers.
+function serializePot(pot, spentAmount = 0, committedAmount = 0) {
+  const usedAmount = spentAmount + committedAmount;
+  const remaining = pot.budgetLimit + pot.rolloverBalance - usedAmount;
   return {
     _id: pot._id,
     name: pot.name,
@@ -18,7 +27,10 @@ function serializePot(pot, spentAmount = 0) {
     budgetLimit: pot.budgetLimit,
     rolloverBalance: pot.rolloverBalance,
     spentAmount,
-    surplus: pot.budgetLimit + pot.rolloverBalance - spentAmount,
+    committedAmount,
+    usedAmount,
+    remaining,
+    surplus: remaining,
     order: pot.order,
   };
 }
@@ -53,6 +65,51 @@ async function getPotSpentAmount(userId, potId) {
   return rows[0]?.total || 0;
 }
 
+/** potId -> money allocated to sinking funds, for every pot in a month. */
+async function getCommittedMapByMonth(userId, monthId) {
+  const rows = await LineItem.aggregate([
+    {
+      $match: {
+        userId: new mongoose.Types.ObjectId(userId),
+        monthId,
+        type: LINE_ITEM_TYPES.SINKING_FUND,
+      },
+    },
+    { $group: { _id: '$potId', total: { $sum: '$allocatedAmount' } } },
+  ]);
+  return new Map(rows.map((row) => [String(row._id), row.total]));
+}
+
+/** Money allocated to sinking funds in a single pot. `potId` must be an ObjectId. */
+async function getPotCommittedAmount(userId, potId) {
+  const rows = await LineItem.aggregate([
+    {
+      $match: {
+        userId: new mongoose.Types.ObjectId(userId),
+        potId,
+        type: LINE_ITEM_TYPES.SINKING_FUND,
+      },
+    },
+    { $group: { _id: null, total: { $sum: '$allocatedAmount' } } },
+  ]);
+  return rows[0]?.total || 0;
+}
+
+/** Fresh { spentAmount, committedAmount, usedAmount, remaining } for one pot document. */
+async function getPotTotals(userId, pot) {
+  const [spentAmount, committedAmount] = await Promise.all([
+    getPotSpentAmount(userId, pot._id),
+    getPotCommittedAmount(userId, pot._id),
+  ]);
+  const usedAmount = spentAmount + committedAmount;
+  return {
+    spentAmount,
+    committedAmount,
+    usedAmount,
+    remaining: pot.budgetLimit + pot.rolloverBalance - usedAmount,
+  };
+}
+
 /** Fetches a pot scoped to user + month, or throws 404 NOT_FOUND. Exported for lineItems.service.js. */
 async function getPotOrThrow(userId, monthId, potId) {
   const pot = await Pot.findOne({ _id: potId, userId, monthId });
@@ -65,11 +122,14 @@ async function getPotOrThrow(userId, monthId, potId) {
 // FR-03 — get all pots for a month.
 async function listPots(userId, monthId) {
   const month = await monthService.getMonthOrThrow(userId, monthId);
-  const [pots, spentMap] = await Promise.all([
+  const [pots, spentMap, committedMap] = await Promise.all([
     Pot.find({ userId, monthId: month._id }).sort({ order: 1 }).lean(),
     getSpendMapByMonth(userId, month._id),
+    getCommittedMapByMonth(userId, month._id),
   ]);
-  return pots.map((pot) => serializePot(pot, spentMap.get(String(pot._id)) || 0));
+  return pots.map((pot) =>
+    serializePot(pot, spentMap.get(String(pot._id)) || 0, committedMap.get(String(pot._id)) || 0)
+  );
 }
 
 // FR-03 — create a pot. Sum of all pot Budget Limits must not exceed Total Monthly Income.
@@ -130,8 +190,8 @@ async function updatePot(userId, monthId, potId, updates) {
   Object.assign(pot, updates);
   await pot.save();
 
-  const spentAmount = await getPotSpentAmount(userId, pot._id);
-  return serializePot(pot.toObject(), spentAmount);
+  const { spentAmount, committedAmount } = await getPotTotals(userId, pot);
+  return serializePot(pot.toObject(), spentAmount, committedAmount);
 }
 
 // FR-03 — delete a pot. Requires { force: true } if it has spend history.
@@ -164,6 +224,9 @@ module.exports = {
   serializePot,
   getSpendMapByMonth,
   getPotSpentAmount,
+  getCommittedMapByMonth,
+  getPotCommittedAmount,
+  getPotTotals,
   getPotOrThrow,
   listPots,
   createPot,

@@ -47,15 +47,23 @@ async function computeHealthScore(userId, monthId) {
   let score = 100;
 
   // "Total spending stayed within income" / negative counterpart.
-  const totalSpent = pots.reduce((sum, pot) => sum + (spentByPot.get(String(pot._id)) || 0), 0);
+  // Money allocated to sinking funds counts as used just like a spend does.
+  const committedByPot = new Map();
+  for (const li of sinkingFundItems) {
+    const key = String(li.potId);
+    committedByPot.set(key, (committedByPot.get(key) || 0) + li.allocatedAmount);
+  }
+  const usedFor = (pot) =>
+    (spentByPot.get(String(pot._id)) || 0) + (committedByPot.get(String(pot._id)) || 0);
+
+  const totalSpent = pots.reduce((sum, pot) => sum + usedFor(pot), 0);
   if (totalSpent > totalIncome) {
     score -= WEIGHTS.OVER_INCOME;
   }
 
   // "A pot exceeded its Budget Limit" — negative, per over-budget pot.
   const overBudgetCount = pots.filter((pot) => {
-    const spent = spentByPot.get(String(pot._id)) || 0;
-    return spent > pot.budgetLimit + pot.rolloverBalance;
+    return usedFor(pot) > pot.budgetLimit + pot.rolloverBalance;
   }).length;
   score -= Math.min(overBudgetCount * WEIGHTS.POT_OVER_BUDGET, WEIGHTS.POT_OVER_BUDGET_CAP);
 

@@ -10,6 +10,7 @@ router.use('/auth', require('../modules/auth/auth.routes'));
 // more specific router for that request.
 //   /months/:monthId/pots/:potId/line-items/:lineItemId/transactions
 //   /months/:monthId/pots/:potId/line-items
+//   /months/:monthId/transfers
 //   /months/:monthId/pots
 //   /months/:monthId/income
 //   /months
@@ -18,6 +19,7 @@ router.use(
   require('../modules/transactions/transactions.routes')
 );
 router.use('/months/:monthId/pots/:potId/line-items', require('../modules/lineItems/lineItems.routes'));
+router.use('/months/:monthId/transfers', require('../modules/transfers/transfers.routes'));
 router.use('/months/:monthId/pots', require('../modules/pots/pots.routes'));
 router.use('/months/:monthId/income', require('../modules/income/income.routes'));
 router.use('/months', require('../modules/months/months.routes'));

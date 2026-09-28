@@ -11,7 +11,11 @@ const createLineItemSchema = z.object({
   // a given type is checked in lineItems.service.js, not here, so the
   // correct SINKING_FUND_FIELDS / INVALID_FIELDS_FOR_TYPE code is used.
   targetAmount: z.number().min(0).optional(),
+  // Defaults to allocatedAmount when omitted (the allocation IS the monthly deposit).
   monthlyContribution: z.number().min(0).optional(),
+  // Fixed annual rate in % — omit/null for funds that earn no interest.
+  annualInterestRate: z.number().min(0).max(100).nullable().optional(),
+  targetDate: z.union([z.null(), z.coerce.date()]).optional(),
 });
 
 // `type` is not updatable — switching an item between INSTANT_SPEND and
@@ -24,6 +28,8 @@ const updateLineItemSchema = z
     order: z.number().int().optional(),
     targetAmount: z.number().min(0).optional(),
     monthlyContribution: z.number().min(0).optional(),
+    annualInterestRate: z.number().min(0).max(100).nullable().optional(),
+    targetDate: z.union([z.null(), z.coerce.date()]).optional(),
   })
   .refine((data) => Object.keys(data).length > 0, { message: 'At least one field is required' });
 
@@ -32,4 +38,10 @@ const markUsedSchema = z.object({
   note: z.string().trim().max(300).optional(),
 });
 
-module.exports = { createLineItemSchema, updateLineItemSchema, markUsedSchema };
+const withdrawSchema = z.object({
+  amount: z.number({ invalid_type_error: 'amount must be a number' }).positive(),
+  note: z.string().trim().max(300).optional(),
+  date: z.coerce.date().optional(),
+});
+
+module.exports = { createLineItemSchema, updateLineItemSchema, markUsedSchema, withdrawSchema };

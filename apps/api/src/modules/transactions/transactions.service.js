@@ -50,7 +50,7 @@ async function createTransaction(userId, monthId, potId, lineItemId, data) {
     paymentMethod: data.paymentMethod,
   });
 
-  const spentAmount = await potsService.getPotSpentAmount(userId, pot._id);
+  const totals = await potsService.getPotTotals(userId, pot);
   return {
     _id: spendLog._id,
     amount: spendLog.amount,
@@ -59,8 +59,8 @@ async function createTransaction(userId, monthId, potId, lineItemId, data) {
     paymentMethod: spendLog.paymentMethod,
     pot: {
       _id: pot._id,
-      spentAmount,
-      surplus: pot.budgetLimit + pot.rolloverBalance - spentAmount,
+      ...totals,
+      surplus: totals.remaining,
     },
   };
 }
@@ -77,13 +77,13 @@ async function updateTransaction(userId, monthId, potId, lineItemId, transaction
   Object.assign(spendLog, updates);
   await spendLog.save();
 
-  const spentAmount = await potsService.getPotSpentAmount(userId, pot._id);
+  const totals = await potsService.getPotTotals(userId, pot);
   return {
     _id: spendLog._id,
     amount: spendLog.amount,
     pot: {
-      spentAmount,
-      surplus: pot.budgetLimit + pot.rolloverBalance - spentAmount,
+      ...totals,
+      surplus: totals.remaining,
     },
   };
 }
@@ -99,11 +99,11 @@ async function deleteTransaction(userId, monthId, potId, lineItemId, transaction
 
   await spendLog.deleteOne();
 
-  const spentAmount = await potsService.getPotSpentAmount(userId, pot._id);
+  const totals = await potsService.getPotTotals(userId, pot);
   return {
     pot: {
-      spentAmount,
-      surplus: pot.budgetLimit + pot.rolloverBalance - spentAmount,
+      ...totals,
+      surplus: totals.remaining,
     },
   };
 }

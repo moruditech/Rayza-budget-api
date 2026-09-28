@@ -12,6 +12,8 @@ const spendLogSchema = new mongoose.Schema(
     amount: { type: Number, required: true, min: 0 },
     date: { type: Date, required: true },
     note: { type: String, trim: true, maxlength: 300, default: null },
+    // Links the OUT and IN entries created by a fund-to-fund transfer.
+    transferId: { type: mongoose.Schema.Types.ObjectId, default: null },
     paymentMethod: {
       type: String,
       enum: Object.values(PAYMENT_METHODS),

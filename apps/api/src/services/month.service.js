@@ -108,6 +108,13 @@ async function cloneMonth(userId, sourceMonthId, { year, month }) {
     getPotSpendMapForClone(userId, sourceMonth._id),
   ]);
 
+  const committedByPot = new Map();
+  for (const li of sourceLineItems) {
+    if (li.type !== LINE_ITEM_TYPES.SINKING_FUND) continue;
+    const key = String(li.potId);
+    committedByPot.set(key, (committedByPot.get(key) || 0) + li.allocatedAmount);
+  }
+
   const decisionsByOldPotId = new Map(
     (sourceMonth.rolloverDecisions || []).map((d) => [String(d.potId), d])
   );
@@ -139,7 +146,10 @@ async function cloneMonth(userId, sourceMonthId, { year, month }) {
     if (action === 'RESET') continue;
 
     const spent = spentByPot.get(String(sourcePot._id)) || 0;
-    const surplus = sourcePot.budgetLimit + sourcePot.rolloverBalance - spent;
+    // Money allocated to sinking funds has left the pot (it sits in the
+    // fund), so it is not surplus that can be rolled over.
+    const committed = committedByPot.get(String(sourcePot._id)) || 0;
+    const surplus = sourcePot.budgetLimit + sourcePot.rolloverBalance - spent - committed;
     if (surplus <= 0) continue;
 
     const beneficiaryOldPotId =
@@ -180,6 +190,8 @@ async function cloneMonth(userId, sourceMonthId, { year, month }) {
       targetAmount: sourceLineItem.targetAmount,
       monthlyContribution: sourceLineItem.monthlyContribution,
       accumulatedBalance: carried.accumulatedBalance,
+      annualInterestRate: sourceLineItem.annualInterestRate ?? null,
+      targetDate: sourceLineItem.targetDate ?? null,
       cycleHistory: sourceLineItem.cycleHistory || [],
     });
   }

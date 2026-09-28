@@ -93,7 +93,11 @@ describe('Transactions', () => {
 
     expect(res.status).toBe(201);
     expect(res.body.data.pot.spentAmount).toBe(150);
-    expect(res.body.data.pot.surplus).toBe(2850);
+    // 3000 budget - 150 spent - 500 auto-deposited into the Driver's Licence fund.
+    expect(res.body.data.pot.spentAmount).toBe(150);
+    expect(res.body.data.pot.committedAmount).toBe(500);
+    expect(res.body.data.pot.remaining).toBe(2350);
+    expect(res.body.data.pot.surplus).toBe(2350);
   });
 
   it('rejects logging a transaction against a SINKING_FUND line item', async () => {
@@ -155,9 +159,9 @@ describe('Month clone', () => {
     expect(names).not.toContain(oneOffItem.name);
 
     const clonedSinking = clonedItems.find((li) => li.name === sinkingItem.name);
-    // accumulatedBalance started at 0, target/monthlyContribution were both
-    // 500, so clone should have applied one contribution and made it ready.
-    expect(clonedSinking.accumulatedBalance).toBe(500);
+    // The fund was created with its R500 allocation already deposited, and
+    // the new month's R500 allocation is deposited on top of it.
+    expect(clonedSinking.accumulatedBalance).toBe(1000);
     expect(clonedSinking.isReadyToUse).toBe(true);
 
     return { newMonth, clonedSinking };
@@ -189,7 +193,12 @@ describe('Mark as Used', () => {
 
   it('rejects mark-used before the target is reached', async () => {
     const { month, pot, sinkingItem } = await setupMonthWithLineItems();
-    // Freshly created — accumulatedBalance is 0, target is 500, not ready yet.
+    // Raise the target above the balance so the fund isn't ready yet.
+    await auth(
+      request(app).patch(
+        `/api/v1/months/${month._id}/pots/${pot._id}/line-items/${sinkingItem._id}`
+      )
+    ).send({ targetAmount: 5000 });
     const res = await auth(
       request(app).post(
         `/api/v1/months/${month._id}/pots/${pot._id}/line-items/${sinkingItem._id}/mark-used`
@@ -208,7 +217,7 @@ describe('Mark as Used', () => {
       request(app).post(
         `/api/v1/months/${newMonth._id}/pots/${pot._id}/line-items/${sinkingItem._id}/mark-used`
       )
-    ).send({ amount: 500, note: "Paid for driver's licence" });
+    ).send({ amount: 1000, note: "Paid for driver's licence" });
 
     expect(markRes.status).toBe(200);
     expect(markRes.body.data.accumulatedBalance).toBe(0);
@@ -220,7 +229,7 @@ describe('Mark as Used', () => {
     );
     expect(spendLogRes.status).toBe(200);
     expect(spendLogRes.body.data).toHaveLength(1);
-    expect(spendLogRes.body.data[0].amount).toBe(500);
+    expect(spendLogRes.body.data[0].amount).toBe(1000);
   });
 
   it('rejects an amount greater than the accumulated balance', async () => {

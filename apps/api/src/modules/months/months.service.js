@@ -59,12 +59,13 @@ async function listMonths(userId) {
 async function getMonthDetail(userId, monthId) {
   const month = await monthService.getMonthOrThrow(userId, monthId);
 
-  const [income, pots, lineItems, potSpendMap, lineItemSpendMap] = await Promise.all([
+  const [income, pots, lineItems, potSpendMap, lineItemSpendMap, potCommittedMap] = await Promise.all([
     Income.find({ userId, monthId: month._id }).sort({ createdAt: 1 }).lean(),
     Pot.find({ userId, monthId: month._id }).sort({ order: 1 }).lean(),
     LineItem.find({ userId, monthId: month._id }).sort({ order: 1 }).lean(),
     potsService.getSpendMapByMonth(userId, month._id),
     lineItemsService.getSpendMapByMonth(userId, month._id),
+    potsService.getCommittedMapByMonth(userId, month._id),
   ]);
 
   const lineItemsByPot = new Map();
@@ -91,7 +92,11 @@ async function getMonthDetail(userId, monthId) {
     unallocatedIncome: totalIncome - totalBudgetLimit,
     income: income.map((i) => ({ _id: i._id, label: i.label, amount: i.amount })),
     pots: pots.map((pot) => ({
-      ...potsService.serializePot(pot, potSpendMap.get(String(pot._id)) || 0),
+      ...potsService.serializePot(
+        pot,
+        potSpendMap.get(String(pot._id)) || 0,
+        potCommittedMap.get(String(pot._id)) || 0
+      ),
       lineItems: lineItemsByPot.get(String(pot._id)) || [],
     })),
   };

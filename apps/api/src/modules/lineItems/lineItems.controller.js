@@ -53,4 +53,15 @@ const markUsed = asyncHandler(async (req, res) => {
   return ApiResponse.success(res, result, 'Sinking fund marked as used');
 });
 
-module.exports = { list, create, update, remove, markUsed };
+const withdraw = asyncHandler(async (req, res) => {
+  const result = await lineItemsService.withdrawLineItem(
+    req.userId,
+    req.params.monthId,
+    req.params.potId,
+    req.params.id,
+    req.body
+  );
+  return ApiResponse.success(res, result, 'Withdrawal recorded');
+});
+
+module.exports = { list, create, update, remove, markUsed, withdraw };

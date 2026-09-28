@@ -1,5 +1,5 @@
 const mongoose = require('mongoose');
-const { LINE_ITEM_TYPES } = require('@budget-app/shared');
+const { LINE_ITEM_TYPES, SPEND_LOG_TYPES } = require('@budget-app/shared');
 const Month = require('../../models/Month.model');
 const Income = require('../../models/Income.model');
 const Pot = require('../../models/Pot.model');
@@ -37,7 +37,14 @@ async function getIncomeVsSpend(userId, monthsCount) {
       { $group: { _id: '$monthId', total: { $sum: '$amount' } } },
     ]),
     SpendLog.aggregate([
-      { $match: { userId: uid, monthId: { $in: monthIds } } },
+      {
+        $match: {
+          userId: uid,
+          monthId: { $in: monthIds },
+          // Fund-to-fund transfers just move money around — not spending.
+          type: { $in: [SPEND_LOG_TYPES.INSTANT_SPEND, SPEND_LOG_TYPES.SINKING_FUND_USED] },
+        },
+      },
       { $group: { _id: '$monthId', total: { $sum: '$amount' } } },
     ]),
   ]);

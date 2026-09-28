@@ -6,6 +6,7 @@ const ApiError = require('../../utils/ApiError');
 const monthService = require('../../services/month.service');
 const sinkingFundService = require('../../services/sinkingFund.service');
 const potsService = require('../pots/pots.service');
+const { projectFund } = require('../../utils/futureValue');
 
 // spentAmount (INSTANT_SPEND) is derived from SpendLog at read time; it
 // never appears on a SINKING_FUND item, and target/accumulated/isReadyToUse/
@@ -29,6 +30,14 @@ function serializeLineItem(li, spentAmount = 0) {
   const progress =
     li.targetAmount > 0 ? Math.round((li.accumulatedBalance / li.targetAmount) * 1000) / 10 : 0;
 
+  // Projection is null unless the fund has a fixed annual rate + target date.
+  const projection = projectFund({
+    balance: li.accumulatedBalance,
+    monthlyContribution: li.monthlyContribution ?? li.allocatedAmount,
+    annualInterestRate: li.annualInterestRate,
+    targetDate: li.targetDate,
+  });
+
   return {
     ...base,
     targetAmount: li.targetAmount,
@@ -36,6 +45,10 @@ function serializeLineItem(li, spentAmount = 0) {
     accumulatedBalance: li.accumulatedBalance,
     isReadyToUse: li.isReadyToUse,
     progress,
+    annualInterestRate: li.annualInterestRate ?? null,
+    targetDate: li.targetDate ?? null,
+    projection,
+    projectedFutureValue: projection ? projection.projectedFutureValue : null,
   };
 }
 
@@ -89,9 +102,25 @@ async function getLineItemOrThrow(userId, potId, lineItemId) {
   return lineItem;
 }
 
+function assertInterestFields(annualInterestRate, targetDate) {
+  if (annualInterestRate != null && !targetDate) {
+    throw new ApiError(
+      422,
+      'targetDate is required when annualInterestRate is set',
+      null,
+      ERROR_CODES.VALIDATION_ERROR
+    );
+  }
+}
+
 function assertTypeFieldsOnCreate(data) {
   if (data.type === LINE_ITEM_TYPES.INSTANT_SPEND) {
-    if (data.targetAmount !== undefined || data.monthlyContribution !== undefined) {
+    if (
+      data.targetAmount !== undefined ||
+      data.monthlyContribution !== undefined ||
+      data.annualInterestRate != null ||
+      data.targetDate != null
+    ) {
       throw new ApiError(
         400,
         'targetAmount and monthlyContribution are not valid for INSTANT_SPEND line items',
@@ -100,14 +129,15 @@ function assertTypeFieldsOnCreate(data) {
       );
     }
   } else if (data.type === LINE_ITEM_TYPES.SINKING_FUND) {
-    if (data.targetAmount === undefined || data.monthlyContribution === undefined) {
+    if (data.targetAmount === undefined) {
       throw new ApiError(
         400,
-        'targetAmount and monthlyContribution are required for SINKING_FUND line items',
+        'targetAmount is required for SINKING_FUND line items',
         null,
         ERROR_CODES.SINKING_FUND_FIELDS
       );
     }
+    assertInterestFields(data.annualInterestRate, data.targetDate);
   }
 }
 
@@ -144,6 +174,8 @@ async function createLineItem(userId, monthId, potId, data) {
     );
   }
 
+  const isSinkingFund = data.type === LINE_ITEM_TYPES.SINKING_FUND;
+
   const lineItem = await LineItem.create({
     userId,
     potId: pot._id,
@@ -153,9 +185,15 @@ async function createLineItem(userId, monthId, potId, data) {
     allocatedAmount: data.allocatedAmount,
     isRecurring: data.isRecurring ?? false,
     order: data.order ?? 0,
-    targetAmount: data.type === LINE_ITEM_TYPES.SINKING_FUND ? data.targetAmount : undefined,
-    monthlyContribution:
-      data.type === LINE_ITEM_TYPES.SINKING_FUND ? data.monthlyContribution : undefined,
+    targetAmount: isSinkingFund ? data.targetAmount : undefined,
+    // The allocation is the monthly deposit unless a separate figure is given.
+    monthlyContribution: isSinkingFund
+      ? (data.monthlyContribution ?? data.allocatedAmount)
+      : undefined,
+    // Auto-deposit: the allocation goes into the fund straight away.
+    accumulatedBalance: isSinkingFund ? data.allocatedAmount : 0,
+    annualInterestRate: isSinkingFund ? (data.annualInterestRate ?? null) : null,
+    targetDate: isSinkingFund ? (data.targetDate ?? null) : null,
   });
 
   return serializeLineItem(lineItem.toObject(), 0);
@@ -172,7 +210,10 @@ async function updateLineItem(userId, monthId, potId, lineItemId, updates) {
 
   if (
     lineItem.type === LINE_ITEM_TYPES.INSTANT_SPEND &&
-    (updates.targetAmount !== undefined || updates.monthlyContribution !== undefined)
+    (updates.targetAmount !== undefined ||
+      updates.monthlyContribution !== undefined ||
+      updates.annualInterestRate != null ||
+      updates.targetDate != null)
   ) {
     throw new ApiError(
       400,
@@ -196,6 +237,34 @@ async function updateLineItem(userId, monthId, potId, lineItemId, updates) {
         null,
         ERROR_CODES.ALLOCATION_EXCEEDED
       );
+    }
+  }
+
+  if (lineItem.type === LINE_ITEM_TYPES.SINKING_FUND) {
+    const nextRate =
+      updates.annualInterestRate !== undefined
+        ? updates.annualInterestRate
+        : lineItem.annualInterestRate;
+    const nextDate = updates.targetDate !== undefined ? updates.targetDate : lineItem.targetDate;
+    assertInterestFields(nextRate, nextDate);
+
+    // Changing the allocation changes what has been deposited into the fund.
+    if (
+      updates.allocatedAmount !== undefined &&
+      updates.allocatedAmount !== lineItem.allocatedAmount
+    ) {
+      const delta = updates.allocatedAmount - lineItem.allocatedAmount;
+      lineItem.accumulatedBalance = Math.max(
+        0,
+        Math.round((lineItem.accumulatedBalance + delta) * 100) / 100
+      );
+      // Keep the monthly contribution in step unless it was set separately.
+      if (
+        updates.monthlyContribution === undefined &&
+        lineItem.monthlyContribution === lineItem.allocatedAmount
+      ) {
+        lineItem.monthlyContribution = updates.allocatedAmount;
+      }
     }
   }
 
@@ -248,8 +317,24 @@ async function markLineItem(userId, monthId, potId, lineItemId, data) {
   return serializeMarkUsedResult(lineItem);
 }
 
+// Withdraw from a sinking fund at any time (before or after its target),
+// e.g. to buy something or fund another goal. Reduces the accumulated
+// balance and writes a SINKING_FUND_USED spend log entry.
+async function withdrawLineItem(userId, monthId, potId, lineItemId, data) {
+  const month = await monthService.getMonthOrThrow(userId, monthId);
+  monthService.assertMonthUnlocked(month);
+
+  const pot = await potsService.getPotOrThrow(userId, month._id, potId);
+  const lineItem = await getLineItemOrThrow(userId, pot._id, lineItemId);
+
+  await sinkingFundService.withdrawFromFund(userId, lineItem, data);
+
+  return serializeLineItem(lineItem.toObject(), 0);
+}
+
 module.exports = {
   serializeLineItem,
+  withdrawLineItem,
   getSpendMapByMonth,
   getLineItemSpentAmount,
   getLineItemOrThrow,
