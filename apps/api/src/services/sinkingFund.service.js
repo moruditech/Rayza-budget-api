@@ -75,6 +75,33 @@ async function withdrawFromFund(userId, lineItem, { amount, note, date }) {
 }
 
 /**
+ * Tops up a fund with a one-off amount taken from its pot's remaining
+ * budget. The caller has already checked the pot can afford it. The amount is
+ * tracked in extraDeposited (used in the pot, but NOT repeated next month)
+ * and lands in the balance straight away.
+ */
+async function depositToFund(userId, lineItem, { amount, note }) {
+  assertSinkingFund(lineItem, 'deposit');
+
+  await SpendLog.create({
+    userId,
+    monthId: lineItem.monthId,
+    potId: lineItem.potId,
+    lineItemId: lineItem._id,
+    type: SPEND_LOG_TYPES.SINKING_FUND_DEPOSIT,
+    amount,
+    date: new Date(),
+    note: note ?? null,
+  });
+
+  lineItem.extraDeposited = round2((lineItem.extraDeposited || 0) + amount);
+  lineItem.accumulatedBalance = round2(lineItem.accumulatedBalance + amount);
+  await lineItem.save();
+
+  return lineItem;
+}
+
+/**
  * FR-06 — Mark as Used. The original "spend the finished goal" flow: same as
  * a withdrawal, but only once the fund has reached its target.
  */
@@ -151,6 +178,7 @@ async function transferBetweenFunds(userId, fromItem, toItem, { amount, note }) 
 module.exports = {
   carryForwardBalance,
   withdrawFromFund,
+  depositToFund,
   markLineItemUsed,
   transferBetweenFunds,
 };

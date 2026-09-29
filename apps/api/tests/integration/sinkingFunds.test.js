@@ -210,3 +210,56 @@ describe('Transfers', () => {
     expect(over.body.error.code).toBe('AMOUNT_EXCEEDS_BALANCE');
   });
 });
+
+describe('Invest remaining pot budget into an existing fund', () => {
+  it('tops up the fund from what is left in the pot, and caps it at that amount', async () => {
+    const { month, pot } = await setup();
+    const fund = (
+      await createFund(month, pot, { name: 'Cash Built', allocatedAmount: 5000, targetAmount: 144000 })
+    ).body.data;
+    const url = `${itemsUrl(month, pot)}/${fund._id}/deposit`;
+
+    const tooMuch = await auth(request(app).post(url)).send({ amount: 1001 });
+    expect(tooMuch.status).toBe(400);
+    expect(tooMuch.body.error.code).toBe('ALLOCATION_EXCEEDED');
+
+    const res = await auth(request(app).post(url)).send({ amount: 800, note: 'Leftover' });
+    expect(res.status).toBe(200);
+    expect(res.body.data.lineItem.accumulatedBalance).toBe(5800);
+    expect(res.body.data.lineItem.extraDeposited).toBe(800);
+    expect(res.body.data.pot.remaining).toBe(200);
+
+    const detail = await getPot(month, pot);
+    expect(detail.committedAmount).toBe(5800);
+    expect(detail.remaining).toBe(200);
+    expect(detail.transferredIn).toBe(0);
+
+    const log = await auth(
+      request(app).get(`/api/v1/spend-log?monthId=${month._id}&type=SINKING_FUND_DEPOSIT`)
+    );
+    expect(log.body.data).toHaveLength(1);
+  });
+
+  it('does not repeat the one-off top-up in the next month', async () => {
+    const { month, pot } = await setup();
+    const fund = (
+      await createFund(month, pot, { name: 'Cash Built', allocatedAmount: 5000, targetAmount: 144000 })
+    ).body.data;
+    await auth(request(app).post(`${itemsUrl(month, pot)}/${fund._id}/deposit`)).send({ amount: 1000 });
+
+    const clone = await auth(request(app).post(`/api/v1/months/${month._id}/clone`)).send({
+      year: 2026,
+      month: 10,
+    });
+    expect(clone.status).toBe(201);
+
+    const nextPot = (await auth(request(app).get(`/api/v1/months/${clone.body.data._id}`))).body.data
+      .pots[0];
+    const nextFund = nextPot.lineItems[0];
+    // 5000 + 1000 carried over, plus October's 5000 allocation.
+    expect(nextFund.accumulatedBalance).toBe(11000);
+    expect(nextFund.extraDeposited).toBe(0);
+    expect(nextPot.committedAmount).toBe(5000);
+    expect(nextPot.remaining).toBe(1000);
+  });
+});

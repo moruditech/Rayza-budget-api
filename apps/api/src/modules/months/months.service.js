@@ -58,6 +58,7 @@ async function listMonths(userId) {
 
 const FUND_ACTIVITY_TYPES = [
   SPEND_LOG_TYPES.SINKING_FUND_USED,
+  SPEND_LOG_TYPES.SINKING_FUND_DEPOSIT,
   SPEND_LOG_TYPES.TRANSFER_IN,
   SPEND_LOG_TYPES.TRANSFER_OUT,
 ];
@@ -112,7 +113,8 @@ function buildFundActivity(logs, lineItems, pots) {
       });
     }
 
-    if (log.type !== SPEND_LOG_TYPES.SINKING_FUND_USED) {
+    // Only real transfers count towards a pot's received / moved-out totals.
+    if (log.type === SPEND_LOG_TYPES.TRANSFER_IN || log.type === SPEND_LOG_TYPES.TRANSFER_OUT) {
       const potKey = String(log.potId);
       const totals = transfersByPot.get(potKey) || { received: 0, sent: 0 };
       if (log.type === SPEND_LOG_TYPES.TRANSFER_IN) totals.received += log.amount;

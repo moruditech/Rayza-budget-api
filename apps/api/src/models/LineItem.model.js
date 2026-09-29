@@ -26,6 +26,10 @@ const lineItemSchema = new mongoose.Schema(
     targetAmount: { type: Number, default: null },
     monthlyContribution: { type: Number, default: null },
     accumulatedBalance: { type: Number, default: 0 },
+    // One-off top-ups paid in from the pot's remaining budget THIS month.
+    // Counted as used in the pot like allocatedAmount, but never carried
+    // into the next month's allocation (only the balance carries over).
+    extraDeposited: { type: Number, default: 0, min: 0 },
     isReadyToUse: { type: Boolean, default: false },
     // Fixed annual interest rate as a percentage (e.g. 7.5 = 7.5% p.a.).
     // null = this fund earns no interest (e.g. cash left in a bank account).
@@ -45,6 +49,7 @@ const lineItemSchema = new mongoose.Schema(
           delete ret.targetAmount;
           delete ret.monthlyContribution;
           delete ret.accumulatedBalance;
+          delete ret.extraDeposited;
           delete ret.isReadyToUse;
           delete ret.annualInterestRate;
           delete ret.targetDate;
@@ -89,6 +94,7 @@ lineItemSchema.pre('save', function preSaveNormalize(next) {
     this.targetAmount = null;
     this.monthlyContribution = null;
     this.accumulatedBalance = 0;
+    this.extraDeposited = 0;
     this.isReadyToUse = false;
     this.annualInterestRate = null;
     this.targetDate = null;

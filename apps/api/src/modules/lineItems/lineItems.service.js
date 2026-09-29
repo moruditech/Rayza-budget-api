@@ -43,6 +43,7 @@ function serializeLineItem(li, spentAmount = 0) {
     targetAmount: li.targetAmount,
     monthlyContribution: li.monthlyContribution,
     accumulatedBalance: li.accumulatedBalance,
+    extraDeposited: li.extraDeposited ?? 0,
     isReadyToUse: li.isReadyToUse,
     progress,
     annualInterestRate: li.annualInterestRate ?? null,
@@ -332,8 +333,38 @@ async function withdrawLineItem(userId, monthId, potId, lineItemId, data) {
   return serializeLineItem(lineItem.toObject(), 0);
 }
 
+// Invest what is left in the pot into an existing sinking fund, instead of
+// having to create a new line item. The amount must fit in the pot's remaining
+// budget (budget + rollover - spent - already put into funds).
+async function depositLineItem(userId, monthId, potId, lineItemId, data) {
+  const month = await monthService.getMonthOrThrow(userId, monthId);
+  monthService.assertMonthUnlocked(month);
+
+  const pot = await potsService.getPotOrThrow(userId, month._id, potId);
+  const lineItem = await getLineItemOrThrow(userId, pot._id, lineItemId);
+
+  const before = await potsService.getPotTotals(userId, pot);
+  if (data.amount > before.remaining) {
+    throw new ApiError(
+      400,
+      'Amount exceeds what is left in this pot',
+      null,
+      ERROR_CODES.ALLOCATION_EXCEEDED
+    );
+  }
+
+  await sinkingFundService.depositToFund(userId, lineItem, data);
+
+  const totals = await potsService.getPotTotals(userId, pot);
+  return {
+    lineItem: serializeLineItem(lineItem.toObject(), 0),
+    pot: { _id: pot._id, ...totals, surplus: totals.remaining },
+  };
+}
+
 module.exports = {
   serializeLineItem,
+  depositLineItem,
   withdrawLineItem,
   getSpendMapByMonth,
   getLineItemSpentAmount,

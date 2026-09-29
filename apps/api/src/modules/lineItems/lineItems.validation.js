@@ -44,4 +44,15 @@ const withdrawSchema = z.object({
   date: z.coerce.date().optional(),
 });
 
-module.exports = { createLineItemSchema, updateLineItemSchema, markUsedSchema, withdrawSchema };
+const depositSchema = z.object({
+  amount: z.number({ invalid_type_error: 'amount must be a number' }).positive(),
+  note: z.string().trim().max(300).optional(),
+});
+
+module.exports = {
+  createLineItemSchema,
+  updateLineItemSchema,
+  markUsedSchema,
+  withdrawSchema,
+  depositSchema,
+};

@@ -112,7 +112,7 @@ async function cloneMonth(userId, sourceMonthId, { year, month }) {
   for (const li of sourceLineItems) {
     if (li.type !== LINE_ITEM_TYPES.SINKING_FUND) continue;
     const key = String(li.potId);
-    committedByPot.set(key, (committedByPot.get(key) || 0) + li.allocatedAmount);
+    committedByPot.set(key, (committedByPot.get(key) || 0) + li.allocatedAmount + (li.extraDeposited || 0));
   }
 
   const decisionsByOldPotId = new Map(

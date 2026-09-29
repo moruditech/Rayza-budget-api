@@ -51,7 +51,7 @@ async function computeHealthScore(userId, monthId) {
   const committedByPot = new Map();
   for (const li of sinkingFundItems) {
     const key = String(li.potId);
-    committedByPot.set(key, (committedByPot.get(key) || 0) + li.allocatedAmount);
+    committedByPot.set(key, (committedByPot.get(key) || 0) + li.allocatedAmount + (li.extraDeposited || 0));
   }
   const usedFor = (pot) =>
     (spentByPot.get(String(pot._id)) || 0) + (committedByPot.get(String(pot._id)) || 0);

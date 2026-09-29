@@ -65,6 +65,9 @@ async function getPotSpentAmount(userId, potId) {
   return rows[0]?.total || 0;
 }
 
+// A fund's commitment = monthly allocation + one-off top-ups from the pot.
+const COMMITTED_EXPR = { $add: ['$allocatedAmount', { $ifNull: ['$extraDeposited', 0] }] };
+
 /** potId -> money allocated to sinking funds, for every pot in a month. */
 async function getCommittedMapByMonth(userId, monthId) {
   const rows = await LineItem.aggregate([
@@ -75,7 +78,7 @@ async function getCommittedMapByMonth(userId, monthId) {
         type: LINE_ITEM_TYPES.SINKING_FUND,
       },
     },
-    { $group: { _id: '$potId', total: { $sum: '$allocatedAmount' } } },
+    { $group: { _id: '$potId', total: { $sum: COMMITTED_EXPR } } },
   ]);
   return new Map(rows.map((row) => [String(row._id), row.total]));
 }
@@ -90,7 +93,7 @@ async function getPotCommittedAmount(userId, potId) {
         type: LINE_ITEM_TYPES.SINKING_FUND,
       },
     },
-    { $group: { _id: null, total: { $sum: '$allocatedAmount' } } },
+    { $group: { _id: null, total: { $sum: COMMITTED_EXPR } } },
   ]);
   return rows[0]?.total || 0;
 }
