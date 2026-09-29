@@ -222,4 +222,42 @@ async function submitRollover(userId, monthId, decisions) {
   await monthService.submitRollover(userId, monthId, decisions);
 }
 
-module.exports = { listMonths, getMonthDetail, createMonth, cloneMonth, lockMonth, submitRollover };
+// Permanently deletes a month (locked or not) together with everything that
+// belongs to it: income, pots, line items and spend log entries. Children go
+// first and the month last, so a failure part-way leaves the month visible
+// and the delete can simply be retried. Other months are left untouched —
+// balances already carried forward into later months stay as they are.
+async function deleteMonth(userId, monthId) {
+  const month = await monthService.getMonthOrThrow(userId, monthId);
+  const filter = { userId, monthId: month._id };
+
+  const [spendLogs, lineItems, pots, income] = await Promise.all([
+    SpendLog.deleteMany(filter),
+    LineItem.deleteMany(filter),
+    Pot.deleteMany(filter),
+    Income.deleteMany(filter),
+  ]);
+  await Month.deleteOne({ _id: month._id, userId });
+
+  return {
+    _id: month._id,
+    year: month.year,
+    month: month.month,
+    deleted: {
+      pots: pots.deletedCount,
+      lineItems: lineItems.deletedCount,
+      income: income.deletedCount,
+      spendLogs: spendLogs.deletedCount,
+    },
+  };
+}
+
+module.exports = {
+  listMonths,
+  getMonthDetail,
+  createMonth,
+  cloneMonth,
+  lockMonth,
+  submitRollover,
+  deleteMonth,
+};

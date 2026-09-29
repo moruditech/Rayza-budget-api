@@ -299,3 +299,19 @@ describe('Reports', () => {
     ]);
   });
 });
+
+describe('Month ready to lock alert', () => {
+  it('alerts for an unlocked month that has already ended, and stops once it is locked', async () => {
+    const monthRes = await auth(request(app).post('/api/v1/months')).send({ year: 2020, month: 1 });
+    const month = monthRes.body.data;
+
+    const before = await auth(request(app).get('/api/v1/alerts'));
+    const alert = before.body.data.find((a) => a.type === 'MONTH_READY_TO_LOCK');
+    expect(alert.message).toBe('January is ready to lock');
+    expect(alert.meta.monthId).toBe(month._id);
+
+    await auth(request(app).patch(`/api/v1/months/${month._id}/lock`));
+    const after = await auth(request(app).get('/api/v1/alerts'));
+    expect(after.body.data.find((a) => a.type === 'MONTH_READY_TO_LOCK')).toBeUndefined();
+  });
+});

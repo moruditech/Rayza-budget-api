@@ -32,4 +32,9 @@ const rollover = asyncHandler(async (req, res) => {
   return ApiResponse.noContent(res, 'Rollover decisions saved');
 });
 
-module.exports = { list, getOne, create, clone, lock, rollover };
+const remove = asyncHandler(async (req, res) => {
+  const result = await monthsService.deleteMonth(req.userId, req.params.id);
+  return ApiResponse.success(res, result, 'Month deleted');
+});
+
+module.exports = { list, getOne, create, clone, lock, rollover, remove };

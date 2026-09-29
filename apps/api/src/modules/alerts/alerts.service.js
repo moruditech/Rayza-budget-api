@@ -5,11 +5,18 @@ const LineItem = require('../../models/LineItem.model');
 const SpendLog = require('../../models/SpendLog.model');
 const monthService = require('../../services/month.service');
 const potsService = require('../pots/pots.service');
-const { daysSince, isAfterDayOfMonth } = require('../../utils/dateUtils');
+const {
+  daysSince,
+  isAfterDayOfMonth,
+  isMonthReadyToLock,
+  getMonthName,
+} = require('../../utils/dateUtils');
 
 const APPROACHING_THRESHOLD = 0.8;
 const STALE_DAYS_THRESHOLD = 5;
 const UNALLOCATED_GRACE_DAY = 5;
+// A month is "ready to lock" during its last 3 days and at any point after.
+const LOCK_READY_DAYS_BEFORE_END = 3;
 
 /**
  * FR-13's GET /alerts has no query params in the API Contract, and the
@@ -28,10 +35,27 @@ async function getCurrentCalendarMonth(userId) {
   });
 }
 
-// FR-13 — evaluates all 5 alert conditions on demand.
+/**
+ * "<Month> is ready to lock" — one alert for every unlocked month that is in
+ * its last days or already over. Independent of the current-month alerts
+ * below, so a month you forgot to lock keeps nagging after it has ended.
+ */
+async function evaluateLockAlerts(userId) {
+  const unlocked = await Month.find({ userId, isLocked: false }).sort({ year: 1, month: 1 }).lean();
+  return unlocked
+    .filter((m) => isMonthReadyToLock(m.year, m.month, LOCK_READY_DAYS_BEFORE_END))
+    .map((m) => ({
+      type: ALERT_TYPES.MONTH_READY_TO_LOCK,
+      message: `${getMonthName(m.month)} is ready to lock`,
+      meta: { monthId: m._id, year: m.year, month: m.month },
+    }));
+}
+
+// FR-13 — evaluates all alert conditions on demand.
 async function evaluateAlerts(userId) {
+  const lockAlerts = await evaluateLockAlerts(userId);
   const month = await getCurrentCalendarMonth(userId);
-  if (!month) return [];
+  if (!month) return lockAlerts;
 
   const [pots, spentByPot, committedByPot, readySinkingFunds, totalIncome, totalBudgetLimit, latestSpend] =
     await Promise.all([
@@ -51,7 +75,7 @@ async function evaluateAlerts(userId) {
       SpendLog.findOne({ userId, monthId: month._id }).sort({ date: -1 }).lean(),
     ]);
 
-  const alerts = [];
+  const alerts = [...lockAlerts];
 
   // "Pot Spent Amount >= 80% of Budget Limit" / "> Budget Limit"
   for (const pot of pots) {

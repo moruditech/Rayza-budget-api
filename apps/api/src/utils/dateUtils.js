@@ -50,7 +50,31 @@ function formatMonthLabel(year, month) {
   return `${MONTH_ABBREVIATIONS[month - 1]} ${year}`;
 }
 
+const MONTH_NAMES = [
+  'January', 'February', 'March', 'April', 'May', 'June',
+  'July', 'August', 'September', 'October', 'November', 'December',
+];
+
+/** Full month name for a 1-indexed month number, e.g. 9 -> "September". */
+function getMonthName(month) {
+  return MONTH_NAMES[month - 1];
+}
+
+/**
+ * True once `now` is within the last `daysBeforeEnd` days of the given
+ * { year, month } (1-indexed), or anywhere after that month has ended.
+ * e.g. September with daysBeforeEnd = 3 -> ready from 28 Sep onwards.
+ */
+function isMonthReadyToLock(year, month, daysBeforeEnd = 3, now = new Date()) {
+  // Day 0 of the following month is the last day of `month`, so counting
+  // back from day 1 of the following month gives the start of the window.
+  const windowStart = Date.UTC(year, month, 1 - daysBeforeEnd);
+  return now.getTime() >= windowStart;
+}
+
 module.exports = {
+  getMonthName,
+  isMonthReadyToLock,
   getMonthBoundaries,
   getPreviousMonth,
   getNextMonth,
