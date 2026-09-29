@@ -13,6 +13,9 @@ const spendLogSchema = new mongoose.Schema(
     date: { type: Date, required: true },
     note: { type: String, trim: true, maxlength: 300, default: null },
     // Links the OUT and IN entries created by a fund-to-fund transfer.
+    // SINKING_FUND_INTEREST only: what the fund's rate predicted for this
+    // payment, so the entry can be compared with what the bank really paid.
+    expectedAmount: { type: Number, default: null },
     transferId: { type: mongoose.Schema.Types.ObjectId, default: null },
     paymentMethod: {
       type: String,

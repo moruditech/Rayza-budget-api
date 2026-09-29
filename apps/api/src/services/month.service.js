@@ -190,6 +190,7 @@ async function cloneMonth(userId, sourceMonthId, { year, month }) {
       targetAmount: sourceLineItem.targetAmount,
       monthlyContribution: sourceLineItem.monthlyContribution,
       accumulatedBalance: carried.accumulatedBalance,
+      interestEarnedTotal: carried.interestEarnedTotal,
       annualInterestRate: sourceLineItem.annualInterestRate ?? null,
       targetDate: sourceLineItem.targetDate ?? null,
       cycleHistory: sourceLineItem.cycleHistory || [],

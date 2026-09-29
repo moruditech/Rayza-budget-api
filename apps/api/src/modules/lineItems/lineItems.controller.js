@@ -75,4 +75,15 @@ const deposit = asyncHandler(async (req, res) => {
   return ApiResponse.success(res, result, 'Deposit recorded');
 });
 
-module.exports = { list, create, update, remove, markUsed, withdraw, deposit };
+const recordInterest = asyncHandler(async (req, res) => {
+  const result = await lineItemsService.recordInterestLineItem(
+    req.userId,
+    req.params.monthId,
+    req.params.potId,
+    req.params.id,
+    req.body
+  );
+  return ApiResponse.success(res, result, 'Interest recorded');
+});
+
+module.exports = { list, create, update, remove, markUsed, withdraw, deposit, recordInterest };

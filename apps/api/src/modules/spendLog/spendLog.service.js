@@ -66,6 +66,7 @@ async function listSpendLog(userId, query) {
     note: entry.note,
     paymentMethod: entry.paymentMethod,
     transferId: entry.transferId ?? null,
+    expectedAmount: entry.expectedAmount ?? null,
     counterparty: counterpartyOf(entry),
     pot: entry.potId ? { _id: entry.potId._id, name: entry.potId.name } : null,
     lineItem: entry.lineItemId

@@ -36,10 +36,13 @@ function assertCanCover(lineItem, amount) {
  */
 function carryForwardBalance(sourceLineItem) {
   if (sourceLineItem.type !== LINE_ITEM_TYPES.SINKING_FUND) {
-    return { accumulatedBalance: 0 };
+    return { accumulatedBalance: 0, interestEarnedTotal: 0 };
   }
   const deposit = sourceLineItem.allocatedAmount || 0;
-  return { accumulatedBalance: round2((sourceLineItem.accumulatedBalance || 0) + deposit) };
+  return {
+    accumulatedBalance: round2((sourceLineItem.accumulatedBalance || 0) + deposit),
+    interestEarnedTotal: sourceLineItem.interestEarnedTotal || 0,
+  };
 }
 
 /**
@@ -96,6 +99,47 @@ async function depositToFund(userId, lineItem, { amount, note }) {
 
   lineItem.extraDeposited = round2((lineItem.extraDeposited || 0) + amount);
   lineItem.accumulatedBalance = round2(lineItem.accumulatedBalance + amount);
+  await lineItem.save();
+
+  return lineItem;
+}
+
+/**
+ * Records interest the bank actually paid into a fund. The money lands in the
+ * balance (and the running interest total) but is NOT taken from the pot's
+ * budget — it's new money. Each entry keeps what the fund's rate predicted
+ * (balance × annual rate / 12) so the two can be compared.
+ */
+async function recordInterest(userId, lineItem, { amount, note, date }) {
+  assertSinkingFund(lineItem, 'record interest');
+
+  if (lineItem.annualInterestRate == null) {
+    throw new ApiError(
+      422,
+      'This fund does not earn interest — set an annual interest rate on it first',
+      null,
+      ERROR_CODES.VALIDATION_ERROR
+    );
+  }
+
+  const expectedAmount = round2(
+    (lineItem.accumulatedBalance * lineItem.annualInterestRate) / 100 / 12
+  );
+
+  await SpendLog.create({
+    userId,
+    monthId: lineItem.monthId,
+    potId: lineItem.potId,
+    lineItemId: lineItem._id,
+    type: SPEND_LOG_TYPES.SINKING_FUND_INTEREST,
+    amount,
+    expectedAmount,
+    date: date ?? new Date(),
+    note: note ?? null,
+  });
+
+  lineItem.accumulatedBalance = round2(lineItem.accumulatedBalance + amount);
+  lineItem.interestEarnedTotal = round2((lineItem.interestEarnedTotal || 0) + amount);
   await lineItem.save();
 
   return lineItem;
@@ -179,6 +223,7 @@ module.exports = {
   carryForwardBalance,
   withdrawFromFund,
   depositToFund,
+  recordInterest,
   markLineItemUsed,
   transferBetweenFunds,
 };

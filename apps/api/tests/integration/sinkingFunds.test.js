@@ -263,3 +263,85 @@ describe('Invest remaining pot budget into an existing fund', () => {
     expect(nextPot.remaining).toBe(1000);
   });
 });
+
+describe('Interest tracking and goal progress', () => {
+  it('records interest the bank paid, keeps it out of the pot budget, and compares it with the rate', async () => {
+    const { month, pot } = await setup();
+    const target = new Date();
+    target.setUTCFullYear(target.getUTCFullYear() + 2);
+    const fund = (
+      await createFund(month, pot, {
+        name: 'Capitec',
+        allocatedAmount: 3000,
+        targetAmount: 50000,
+        annualInterestRate: 12,
+        targetDate: target.toISOString(),
+      })
+    ).body.data;
+    const url = `${itemsUrl(month, pot)}/${fund._id}/interest`;
+
+    const res = await auth(request(app).post(url)).send({ amount: 31, note: 'October interest' });
+    expect(res.status).toBe(200);
+    expect(res.body.data.accumulatedBalance).toBe(3031);
+    expect(res.body.data.interestEarned).toBe(31);
+
+    // Pot budget is unchanged — interest is new money, not something the pot paid.
+    const detail = await getPot(month, pot);
+    expect(detail.committedAmount).toBe(3000);
+
+    // 12% p.a. on 3000 -> 30 a month expected.
+    const item = detail.lineItems.find((li) => li.name === 'Capitec');
+    expect(item.activity[0]).toMatchObject({ type: 'SINKING_FUND_INTEREST', amount: 31, expectedAmount: 30 });
+  });
+
+  it('refuses interest on a fund with no interest rate', async () => {
+    const { month, pot } = await setup();
+    const fund = (
+      await createFund(month, pot, { name: 'Bank', allocatedAmount: 500, targetAmount: 5000 })
+    ).body.data;
+    const res = await auth(request(app).post(`${itemsUrl(month, pot)}/${fund._id}/interest`)).send({
+      amount: 5,
+    });
+    expect(res.status).toBe(422);
+  });
+
+  it('carries the running interest total into the next month', async () => {
+    const { month, pot } = await setup();
+    const target = new Date();
+    target.setUTCFullYear(target.getUTCFullYear() + 2);
+    const fund = (
+      await createFund(month, pot, {
+        name: 'Capitec',
+        allocatedAmount: 1000,
+        targetAmount: 50000,
+        annualInterestRate: 12,
+        targetDate: target.toISOString(),
+      })
+    ).body.data;
+    await auth(request(app).post(`${itemsUrl(month, pot)}/${fund._id}/interest`)).send({ amount: 10 });
+
+    const clone = await auth(request(app).post(`/api/v1/months/${month._id}/clone`)).send({
+      year: 2026,
+      month: 10,
+    });
+    const nextFund = (await auth(request(app).get(`/api/v1/months/${clone.body.data._id}`))).body.data
+      .pots[0].lineItems[0];
+    expect(nextFund.interestEarned).toBe(10);
+  });
+
+  it('reports whether a fund with a goal date is on track', async () => {
+    const { month, pot } = await setup();
+    const target = new Date();
+    target.setUTCFullYear(target.getUTCFullYear() + 1);
+    const fund = (
+      await createFund(month, pot, {
+        name: 'Tablet',
+        allocatedAmount: 100,
+        targetAmount: 12000,
+        targetDate: target.toISOString(),
+      })
+    ).body.data;
+    expect(fund.progressCheck.status).toBe('BEHIND');
+    expect(fund.progressCheck.requiredMonthly).toBeGreaterThan(100);
+  });
+});

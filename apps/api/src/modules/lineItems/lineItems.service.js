@@ -6,7 +6,7 @@ const ApiError = require('../../utils/ApiError');
 const monthService = require('../../services/month.service');
 const sinkingFundService = require('../../services/sinkingFund.service');
 const potsService = require('../pots/pots.service');
-const { projectFund } = require('../../utils/futureValue');
+const { projectFund, goalProgress } = require('../../utils/futureValue');
 
 // spentAmount (INSTANT_SPEND) is derived from SpendLog at read time; it
 // never appears on a SINKING_FUND item, and target/accumulated/isReadyToUse/
@@ -50,6 +50,16 @@ function serializeLineItem(li, spentAmount = 0) {
     targetDate: li.targetDate ?? null,
     projection,
     projectedFutureValue: projection ? projection.projectedFutureValue : null,
+    // Interest the bank has actually paid into this fund so far (all months).
+    interestEarned: li.interestEarnedTotal ?? 0,
+    // "Am I on track?" — needs a target amount and a goal date.
+    progressCheck: goalProgress({
+      balance: li.accumulatedBalance,
+      monthlyContribution: li.monthlyContribution ?? li.allocatedAmount,
+      targetAmount: li.targetAmount,
+      annualInterestRate: li.annualInterestRate,
+      targetDate: li.targetDate,
+    }),
   };
 }
 
@@ -362,8 +372,23 @@ async function depositLineItem(userId, monthId, potId, lineItemId, data) {
   };
 }
 
+// Log interest the bank actually paid into a fund and compare it with what the
+// fund's rate predicted.
+async function recordInterestLineItem(userId, monthId, potId, lineItemId, data) {
+  const month = await monthService.getMonthOrThrow(userId, monthId);
+  monthService.assertMonthUnlocked(month);
+
+  const pot = await potsService.getPotOrThrow(userId, month._id, potId);
+  const lineItem = await getLineItemOrThrow(userId, pot._id, lineItemId);
+
+  await sinkingFundService.recordInterest(userId, lineItem, data);
+
+  return serializeLineItem(lineItem.toObject(), 0);
+}
+
 module.exports = {
   serializeLineItem,
+  recordInterestLineItem,
   depositLineItem,
   withdrawLineItem,
   getSpendMapByMonth,

@@ -59,6 +59,7 @@ async function listMonths(userId) {
 const FUND_ACTIVITY_TYPES = [
   SPEND_LOG_TYPES.SINKING_FUND_USED,
   SPEND_LOG_TYPES.SINKING_FUND_DEPOSIT,
+  SPEND_LOG_TYPES.SINKING_FUND_INTEREST,
   SPEND_LOG_TYPES.TRANSFER_IN,
   SPEND_LOG_TYPES.TRANSFER_OUT,
 ];
@@ -109,6 +110,7 @@ function buildFundActivity(logs, lineItems, pots) {
         amount: log.amount,
         date: log.date,
         note: log.note,
+        expectedAmount: log.expectedAmount ?? null,
         counterparty,
       });
     }

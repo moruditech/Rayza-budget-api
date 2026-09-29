@@ -49,7 +49,14 @@ const depositSchema = z.object({
   note: z.string().trim().max(300).optional(),
 });
 
+const recordInterestSchema = z.object({
+  amount: z.number({ invalid_type_error: 'amount must be a number' }).positive(),
+  note: z.string().trim().max(300).optional(),
+  date: z.coerce.date().optional(),
+});
+
 module.exports = {
+  recordInterestSchema,
   createLineItemSchema,
   updateLineItemSchema,
   markUsedSchema,
