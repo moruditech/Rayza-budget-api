@@ -75,6 +75,69 @@ async function getSpendingByPot(userId, monthId) {
   }));
 }
 
+/**
+ * How each pot did this month compared with the previous calendar month.
+ * Pots are separate documents in every month (a clone creates new ones), so the
+ * same pot is matched across months by name, ignoring case and spacing.
+ * "used" = spent + money put into sinking funds, the same as the pot card.
+ */
+async function getPotComparison(userId, monthId) {
+  const month = await monthService.getMonthOrThrow(userId, monthId);
+  const prevYear = month.month === 1 ? month.year - 1 : month.year;
+  const prevMonthNo = month.month === 1 ? 12 : month.month - 1;
+  const previous = await Month.findOne({ userId, year: prevYear, month: prevMonthNo }).lean();
+
+  const [currentPots, previousPots] = await Promise.all([
+    potsService.listPots(userId, month._id),
+    previous ? potsService.listPots(userId, previous._id) : Promise.resolve([]),
+  ]);
+
+  const snapshot = (p) => ({
+    budget: p.budgetLimit,
+    spent: p.spentAmount,
+    committed: p.committedAmount,
+    used: p.usedAmount,
+    remaining: p.remaining,
+  });
+  const keyOf = (p) => p.name.trim().toLowerCase();
+  const previousByName = new Map(previousPots.map((p) => [keyOf(p), p]));
+  const seen = new Set();
+
+  const rows = currentPots.map((p) => {
+    const before = previousByName.get(keyOf(p));
+    seen.add(keyOf(p));
+    return buildComparisonRow(p.name, p.type, snapshot(p), before ? snapshot(before) : null);
+  });
+  // Pots that existed last month but not this one.
+  previousPots
+    .filter((p) => !seen.has(keyOf(p)))
+    .forEach((p) => rows.push(buildComparisonRow(p.name, p.type, null, snapshot(p))));
+
+  const sum = (list, field) => list.reduce((s, p) => s + p[field], 0);
+  return {
+    month: { year: month.year, month: month.month },
+    previousMonth: previous ? { year: previous.year, month: previous.month } : null,
+    totals: {
+      current: sum(currentPots, 'usedAmount'),
+      previous: previous ? sum(previousPots, 'usedAmount') : null,
+    },
+    pots: rows,
+  };
+}
+
+function buildComparisonRow(name, type, current, previous) {
+  const change = current && previous ? current.used - previous.used : null;
+  return {
+    name,
+    type,
+    current,
+    previous,
+    usedChange: change,
+    usedChangePercent:
+      change != null && previous.used > 0 ? Math.round((change / previous.used) * 100) : null,
+  };
+}
+
 // FR-14 — Sinking Fund Progress over time. A cloned month creates a brand
 // new LineItem document each time (a fresh _id every month), so there's no
 // persistent "series id" linking the same ongoing goal across months in
@@ -153,6 +216,7 @@ async function getCategoryBreakdown(userId, monthId) {
 module.exports = {
   getIncomeVsSpend,
   getSpendingByPot,
+  getPotComparison,
   getSinkingFundProgress,
   getHealthHistory,
   getCategoryBreakdown,

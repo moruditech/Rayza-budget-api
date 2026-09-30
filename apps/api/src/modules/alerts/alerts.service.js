@@ -1,4 +1,5 @@
 const { ALERT_TYPES, LINE_ITEM_TYPES } = require('@budget-app/shared');
+const { goalProgress } = require('../../utils/futureValue');
 const Month = require('../../models/Month.model');
 const Pot = require('../../models/Pot.model');
 const LineItem = require('../../models/LineItem.model');
@@ -112,6 +113,81 @@ async function evaluateBillAlerts(userId, month, now = new Date()) {
   return alerts.sort((a, b) => a.meta.daysUntilDue - b.meta.daysUntilDue);
 }
 
+// "1 050" — rand amounts written the way the app shows them.
+function formatRand(value) {
+  return `R ${Math.round(value).toString().replace(/\B(?=(\d{3})+(?!\d))/g, ' ')}`;
+}
+
+/**
+ * "R 1 050 left in Build Home" — in the last days of an open month, a pot that
+ * still has money left AND has a sinking fund that has not reached its target
+ * gets a prompt to add the leftover to that fund. The fund suggested is the one
+ * furthest behind: funds behind their goal first (biggest monthly shortfall),
+ * then the lowest percentage saved. The suggested amount never exceeds what the
+ * fund still needs.
+ */
+async function evaluateLeftoverAlerts(userId, month, now = new Date()) {
+  if (month.isLocked) return [];
+  if (!isMonthReadyToLock(month.year, month.month, LOCK_READY_DAYS_BEFORE_END, now)) return [];
+
+  const [pots, spentMap, committedMap, funds] = await Promise.all([
+    Pot.find({ userId, monthId: month._id }).sort({ order: 1 }).lean(),
+    potsService.getSpendMapByMonth(userId, month._id),
+    potsService.getCommittedMapByMonth(userId, month._id),
+    LineItem.find({ userId, monthId: month._id, type: LINE_ITEM_TYPES.SINKING_FUND }).lean(),
+  ]);
+
+  const alerts = [];
+  for (const pot of pots) {
+    const remaining =
+      pot.budgetLimit +
+      pot.rolloverBalance -
+      (spentMap.get(String(pot._id)) || 0) -
+      (committedMap.get(String(pot._id)) || 0);
+    if (remaining < 1) continue;
+
+    const candidates = funds
+      .filter((f) => String(f.potId) === String(pot._id) && f.targetAmount > f.accumulatedBalance)
+      .map((f) => {
+        const progress = goalProgress(
+          {
+            balance: f.accumulatedBalance,
+            monthlyContribution: f.monthlyContribution ?? f.allocatedAmount,
+            targetAmount: f.targetAmount,
+            annualInterestRate: f.annualInterestRate,
+            targetDate: f.targetDate,
+          },
+          now
+        );
+        return {
+          fund: f,
+          behindBy: progress?.status === 'BEHIND' ? progress.shortfall : 0,
+          saved: f.accumulatedBalance / f.targetAmount,
+        };
+      })
+      .sort((a, b) => b.behindBy - a.behindBy || a.saved - b.saved);
+
+    if (candidates.length === 0) continue;
+    const { fund } = candidates[0];
+    const suggestedAmount = Math.round(Math.min(remaining, fund.targetAmount - fund.accumulatedBalance) * 100) / 100;
+    if (suggestedAmount < 1) continue;
+
+    alerts.push({
+      type: ALERT_TYPES.POT_LEFTOVER,
+      message: `${formatRand(remaining)} left in ${pot.name}`,
+      meta: {
+        monthId: month._id,
+        potId: pot._id,
+        lineItemId: fund._id,
+        lineItemName: fund.name,
+        remaining: Math.round(remaining * 100) / 100,
+        suggestedAmount,
+      },
+    });
+  }
+  return alerts;
+}
+
 // FR-13 — evaluates all alert conditions on demand.
 async function evaluateAlerts(userId) {
   const lockAlerts = await evaluateLockAlerts(userId);
@@ -136,7 +212,11 @@ async function evaluateAlerts(userId) {
       SpendLog.findOne({ userId, monthId: month._id }).sort({ date: -1 }).lean(),
     ]);
 
-  const alerts = [...lockAlerts, ...(await evaluateBillAlerts(userId, month))];
+  const alerts = [
+    ...lockAlerts,
+    ...(await evaluateBillAlerts(userId, month)),
+    ...(await evaluateLeftoverAlerts(userId, month)),
+  ];
 
   // "Pot Spent Amount >= 80% of Budget Limit" / "> Budget Limit"
   for (const pot of pots) {
@@ -199,4 +279,4 @@ async function evaluateAlerts(userId) {
   return alerts;
 }
 
-module.exports = { evaluateAlerts };
+module.exports = { evaluateAlerts, evaluateLeftoverAlerts };

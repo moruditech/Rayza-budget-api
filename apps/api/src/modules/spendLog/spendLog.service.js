@@ -1,4 +1,6 @@
 const SpendLog = require('../../models/SpendLog.model');
+const LineItem = require('../../models/LineItem.model');
+const Pot = require('../../models/Pot.model');
 const { getPaginationParams, buildPaginationMeta } = require('../../utils/paginate');
 
 // FR-10 — every transaction and every sinking-fund Mark as Used event
@@ -13,6 +15,24 @@ async function listSpendLog(userId, query) {
   if (query.lineItemId) filter.lineItemId = query.lineItemId;
   if (query.type) filter.type = query.type;
   if (query.paymentMethod) filter.paymentMethod = query.paymentMethod;
+  if (query.minAmount != null || query.maxAmount != null) {
+    filter.amount = {};
+    if (query.minAmount != null) filter.amount.$gte = query.minAmount;
+    if (query.maxAmount != null) filter.amount.$lte = query.maxAmount;
+  }
+
+  // Free-text search: the note, or the name of the line item / pot it belongs to.
+  if (query.search) {
+    const rx = new RegExp(query.search.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'i');
+    const scope = { userId };
+    if (query.monthId) scope.monthId = query.monthId;
+    const [lineItemIds, potIds] = await Promise.all([
+      LineItem.find({ ...scope, name: rx }).distinct('_id'),
+      Pot.find({ ...scope, name: rx }).distinct('_id'),
+    ]);
+    filter.$or = [{ note: rx }, { lineItemId: { $in: lineItemIds } }, { potId: { $in: potIds } }];
+  }
+
   if (query.from || query.to) {
     filter.date = {};
     if (query.from) filter.date.$gte = query.from;

@@ -19,6 +19,12 @@ router.get(
   ctrl.spendingByPot
 );
 router.get(
+  '/pot-comparison',
+  authenticate,
+  validateRequest.validateQuery(monthIdQuerySchema),
+  ctrl.potComparison
+);
+router.get(
   '/sinking-fund-progress',
   authenticate,
   validateRequest.validateQuery(monthsQuerySchema),

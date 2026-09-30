@@ -22,6 +22,11 @@ const healthHistory = asyncHandler(async (req, res) => {
   return ApiResponse.success(res, data, 'Report retrieved');
 });
 
+const potComparison = asyncHandler(async (req, res) => {
+  const data = await reportsService.getPotComparison(req.userId, req.query.monthId);
+  return ApiResponse.success(res, data, 'Report retrieved');
+});
+
 const categoryBreakdown = asyncHandler(async (req, res) => {
   const data = await reportsService.getCategoryBreakdown(req.userId, req.query.monthId);
   return ApiResponse.success(res, data, 'Report retrieved');
@@ -30,6 +35,7 @@ const categoryBreakdown = asyncHandler(async (req, res) => {
 module.exports = {
   incomeVsSpend,
   spendingByPot,
+  potComparison,
   sinkingFundProgress,
   healthHistory,
   categoryBreakdown,
