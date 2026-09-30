@@ -19,6 +19,12 @@ const envSchema = z.object({
   JWT_REFRESH_EXPIRES_IN: z.string().default('7d'),
   REDIS_URL: z.string().min(1, 'REDIS_URL is required'),
   CLIENT_URL: z.string().url('CLIENT_URL must be a valid URL'),
+  // Email (password reset). 'log' just writes the email to the server log —
+  // fine for development; in production set 'resend' or 'brevo' plus the rest.
+  MAIL_PROVIDER: z.enum(['log', 'resend', 'brevo']).default('log'),
+  MAIL_API_KEY: z.string().optional(),
+  MAIL_FROM: z.string().optional(), // e.g. noreply@yourdomain.co.za
+  MAIL_FROM_NAME: z.string().default('Budget'),
 });
 
 const parsed = envSchema.safeParse(process.env);

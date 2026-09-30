@@ -1,9 +1,22 @@
 const express = require('express');
 const authenticate = require('../../middleware/authenticate');
 const validateRequest = require('../../middleware/validateRequest');
-const { authRateLimiter, passwordChangeRateLimiter, registerRateLimiter } = require('../../config/rateLimiter');
+const {
+  authRateLimiter,
+  passwordChangeRateLimiter,
+  registerRateLimiter,
+  forgotPasswordRateLimiter,
+  resetPasswordRateLimiter,
+} = require('../../config/rateLimiter');
 const ctrl = require('./auth.controller');
-const { registerSchema, loginSchema, changePasswordSchema } = require('./auth.validation');
+const {
+  registerSchema,
+  loginSchema,
+  changePasswordSchema,
+  forgotPasswordSchema,
+  resetPasswordSchema,
+  consentSchema,
+} = require('./auth.validation');
 
 const router = express.Router();
 
@@ -29,6 +42,23 @@ router.patch(
   authenticate,
   validateRequest(changePasswordSchema),
   ctrl.changePassword
+);
+
+router.get('/me', authenticate, ctrl.me);
+router.post('/consent', authenticate, validateRequest(consentSchema), ctrl.consent);
+
+// Forgot password: public, strictly rate-limited.
+router.post(
+  '/forgot-password',
+  forgotPasswordRateLimiter,
+  validateRequest(forgotPasswordSchema),
+  ctrl.forgotPassword
+);
+router.post(
+  '/reset-password',
+  resetPasswordRateLimiter,
+  validateRequest(resetPasswordSchema),
+  ctrl.resetPassword
 );
 
 module.exports = router;

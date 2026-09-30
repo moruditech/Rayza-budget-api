@@ -67,7 +67,41 @@ const registerRateLimiter = rateLimit({
   skip: () => isTestEnv,
 });
 
+// Asking for a reset email: each one is a real email sent, so keep it tight.
+const forgotPasswordRateLimiter = rateLimit({
+  windowMs: 60 * 60 * 1000,
+  max: 5,
+  standardHeaders: true,
+  legacyHeaders: false,
+  handler: rateLimitHandler,
+  skip: () => isTestEnv,
+});
+
+// Using a reset token: stops guessing tokens.
+const resetPasswordRateLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 10,
+  standardHeaders: true,
+  legacyHeaders: false,
+  handler: rateLimitHandler,
+  skip: () => isTestEnv,
+});
+
+// Deleting an account needs the password, so guard it like a login.
+const accountDeleteRateLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 5,
+  standardHeaders: true,
+  legacyHeaders: false,
+  handler: rateLimitHandler,
+  skipSuccessfulRequests: true,
+  skip: () => isTestEnv,
+});
+
 module.exports = {
+  forgotPasswordRateLimiter,
+  resetPasswordRateLimiter,
+  accountDeleteRateLimiter,
   globalRateLimiter,
   authRateLimiter,
   passwordChangeRateLimiter,

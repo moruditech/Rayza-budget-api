@@ -16,6 +16,11 @@ const registerSchema = z.object({
   name: z.string().trim().min(1, 'Name is required').max(100),
   email: z.string().trim().toLowerCase().max(254).email('Must be a valid email address'),
   password: passwordSchema,
+  // Must be ticked: accepts the Terms of Use and Privacy Policy and confirms
+  // the person is 18 or older. The accepted version is recorded server-side.
+  acceptTerms: z.literal(true, {
+    errorMap: () => ({ message: 'You must accept the Terms of Use and Privacy Policy' }),
+  }),
 });
 
 const loginSchema = z.object({
@@ -31,4 +36,26 @@ const changePasswordSchema = z.object({
   newPassword: passwordSchema,
 });
 
-module.exports = { registerSchema, loginSchema, changePasswordSchema };
+const forgotPasswordSchema = z.object({
+  email: z.string().trim().toLowerCase().max(254).email('Must be a valid email address'),
+});
+
+const resetPasswordSchema = z.object({
+  token: z.string().regex(/^[a-f0-9]{64}$/, 'Reset link is invalid'),
+  password: passwordSchema,
+});
+
+// Accepting the current Terms / Privacy Policy (for people who registered
+// before they existed, or after they changed).
+const consentSchema = z.object({
+  accept: z.literal(true, { errorMap: () => ({ message: 'You must accept to continue' }) }),
+});
+
+module.exports = {
+  registerSchema,
+  loginSchema,
+  changePasswordSchema,
+  forgotPasswordSchema,
+  resetPasswordSchema,
+  consentSchema,
+};

@@ -3,6 +3,7 @@ const express = require('express');
 const router = express.Router();
 
 router.use('/auth', require('../modules/auth/auth.routes'));
+router.use('/account', require('../modules/account/account.routes'));
 
 // Order matters here: each mount path below is a strict prefix of the one
 // after it, so the more specific (longer) path is always registered first

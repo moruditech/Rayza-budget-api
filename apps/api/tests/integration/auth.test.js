@@ -7,6 +7,7 @@ const VALID_USER = {
   name: 'Jane Budgeter',
   email: 'jane@example.com',
   password: 'Str0ngPass1',
+  acceptTerms: true,
 };
 
 async function registerAndLogin(overrides = {}) {

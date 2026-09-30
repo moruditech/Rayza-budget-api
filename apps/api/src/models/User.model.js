@@ -7,6 +7,13 @@ const userSchema = new mongoose.Schema(
     // documented in the Data Models spec ("Indexes: email — unique").
     email: { type: String, required: true, unique: true, lowercase: true, trim: true },
     passwordHash: { type: String, required: true },
+    // Which version of the Terms / Privacy / Cookie policies the person accepted
+    // (see LEGAL_VERSION in @budget-app/shared) and when.
+    consentVersion: { type: String, default: null },
+    consentAt: { type: Date, default: null },
+    // Refresh tokens issued before this moment are rejected — set when the
+    // password is reset so every other device is signed out.
+    sessionsValidAfter: { type: Date, default: null },
   },
   {
     timestamps: true,

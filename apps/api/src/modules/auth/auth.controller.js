@@ -2,6 +2,7 @@ const asyncHandler = require('../../utils/asyncHandler');
 const ApiResponse = require('../../utils/ApiResponse');
 const env = require('../../config/env');
 const tokenService = require('../../services/token.service');
+const logger = require('../../config/logger');
 const authService = require('./auth.service');
 
 const REFRESH_COOKIE_NAME = 'refreshToken';
@@ -46,4 +47,42 @@ const changePassword = asyncHandler(async (req, res) => {
   return ApiResponse.noContent(res, 'Password updated successfully');
 });
 
-module.exports = { register, login, refresh, logout, changePassword };
+const me = asyncHandler(async (req, res) => {
+  const data = await authService.getMe(req.userId);
+  return ApiResponse.success(res, data, 'Profile retrieved');
+});
+
+const consent = asyncHandler(async (req, res) => {
+  const data = await authService.acceptConsent(req.userId);
+  return ApiResponse.success(res, data, 'Consent recorded');
+});
+
+// Always the same answer, and it does not wait for the email, so neither the
+// message nor the response time shows whether the address has an account.
+const forgotPassword = asyncHandler(async (req, res) => {
+  authService
+    .forgotPassword(req.body.email)
+    .catch((err) => logger.error(`Forgot-password failed: ${err.message}`));
+  return ApiResponse.success(
+    res,
+    null,
+    'If that email has an account, a reset link is on its way'
+  );
+});
+
+const resetPassword = asyncHandler(async (req, res) => {
+  await authService.resetPassword(req.body);
+  return ApiResponse.noContent(res, 'Password has been reset');
+});
+
+module.exports = {
+  register,
+  login,
+  refresh,
+  logout,
+  changePassword,
+  me,
+  consent,
+  forgotPassword,
+  resetPassword,
+};

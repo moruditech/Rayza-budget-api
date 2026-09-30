@@ -4,6 +4,7 @@ const { PAYMENT_METHODS } = require('./constants/paymentMethods');
 const { ERROR_CODES } = require('./constants/errorCodes');
 const { SPEND_LOG_TYPES } = require('./constants/spendLogTypes');
 const { ALERT_TYPES } = require('./constants/alertTypes');
+const { LEGAL_VERSION } = require('./constants/legal');
 
 module.exports = {
   POT_TYPES,
@@ -12,4 +13,5 @@ module.exports = {
   ERROR_CODES,
   SPEND_LOG_TYPES,
   ALERT_TYPES,
+  LEGAL_VERSION,
 };
