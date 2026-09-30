@@ -34,6 +34,12 @@ const lineItemSchema = new mongoose.Schema(
     // forward on clone, like the balance).
     interestEarnedTotal: { type: Number, default: 0, min: 0 },
     isReadyToUse: { type: Boolean, default: false },
+    // Bills: the day of the month this item is due (1-31, clamped to the
+    // month's length). null = not a bill. isPaid is set by the person tapping
+    // "Mark paid" and resets when the month is cloned.
+    dueDay: { type: Number, default: null, min: 1, max: 31 },
+    isPaid: { type: Boolean, default: false },
+    paidAt: { type: Date, default: null },
     // Fixed annual interest rate as a percentage (e.g. 7.5 = 7.5% p.a.).
     // null = this fund earns no interest (e.g. cash left in a bank account).
     annualInterestRate: { type: Number, default: null, min: 0, max: 100 },

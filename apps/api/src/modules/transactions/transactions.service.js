@@ -38,17 +38,34 @@ async function createTransaction(userId, monthId, potId, lineItemId, data) {
     );
   }
 
-  const spendLog = await SpendLog.create({
-    userId,
-    monthId: month._id,
-    potId: pot._id,
-    lineItemId: lineItem._id,
-    type: SPEND_LOG_TYPES.INSTANT_SPEND,
-    amount: data.amount,
-    date: data.date,
-    note: data.note ?? null,
-    paymentMethod: data.paymentMethod,
-  });
+  // A spend logged offline is sent again until the app hears back. The same
+  // clientRequestId always maps to the one entry, so it is never counted twice.
+  let spendLog = data.clientRequestId
+    ? await SpendLog.findOne({ userId, clientRequestId: data.clientRequestId })
+    : null;
+
+  if (!spendLog) {
+    try {
+      spendLog = await SpendLog.create({
+        userId,
+        monthId: month._id,
+        potId: pot._id,
+        lineItemId: lineItem._id,
+        type: SPEND_LOG_TYPES.INSTANT_SPEND,
+        amount: data.amount,
+        date: data.date,
+        note: data.note ?? null,
+        paymentMethod: data.paymentMethod,
+        clientRequestId: data.clientRequestId ?? null,
+      });
+    } catch (err) {
+      // Two retries racing each other: the unique index let one through.
+      if (err?.code === 11000 && data.clientRequestId) {
+        spendLog = await SpendLog.findOne({ userId, clientRequestId: data.clientRequestId });
+      }
+      if (!spendLog) throw err;
+    }
+  }
 
   const totals = await potsService.getPotTotals(userId, pot);
   return {

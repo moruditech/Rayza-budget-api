@@ -6,6 +6,8 @@ const createTransactionSchema = z.object({
   date: z.coerce.date(),
   note: z.string().trim().max(300).optional(),
   paymentMethod: z.enum(Object.values(PAYMENT_METHODS)).optional(),
+  // Idempotency key for spends logged offline (see SpendLog.model.js).
+  clientRequestId: z.string().trim().min(8).max(64).optional(),
 });
 
 const updateTransactionSchema = z

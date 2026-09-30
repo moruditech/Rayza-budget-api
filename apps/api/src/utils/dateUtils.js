@@ -72,7 +72,24 @@ function isMonthReadyToLock(year, month, daysBeforeEnd = 3, now = new Date()) {
   return now.getTime() >= windowStart;
 }
 
+const MS_PER_DAY = 24 * 60 * 60 * 1000;
+
+/** UTC midnight of the day a bill is due in { year, month } (1-indexed); a due day of 31 in a 30-day month becomes the 30th. */
+function dueDateFor(year, month, dueDay) {
+  const lastDay = new Date(Date.UTC(year, month, 0)).getUTCDate();
+  return new Date(Date.UTC(year, month - 1, Math.min(dueDay, lastDay)));
+}
+
+/** Whole days from `from` to `to` (negative when `to` is earlier), ignoring the time of day. */
+function daysBetweenUtc(from, to) {
+  const a = Date.UTC(from.getUTCFullYear(), from.getUTCMonth(), from.getUTCDate());
+  const b = Date.UTC(to.getUTCFullYear(), to.getUTCMonth(), to.getUTCDate());
+  return Math.round((b - a) / MS_PER_DAY);
+}
+
 module.exports = {
+  dueDateFor,
+  daysBetweenUtc,
   getMonthName,
   isMonthReadyToLock,
   getMonthBoundaries,

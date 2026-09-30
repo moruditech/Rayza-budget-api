@@ -10,6 +10,8 @@ const {
   isAfterDayOfMonth,
   isMonthReadyToLock,
   getMonthName,
+  dueDateFor,
+  daysBetweenUtc,
 } = require('../../utils/dateUtils');
 
 const APPROACHING_THRESHOLD = 0.8;
@@ -17,6 +19,8 @@ const STALE_DAYS_THRESHOLD = 5;
 const UNALLOCATED_GRACE_DAY = 5;
 // A month is "ready to lock" during its last 3 days and at any point after.
 const LOCK_READY_DAYS_BEFORE_END = 3;
+// Unpaid bills start showing up this many days before they are due.
+const BILL_REMINDER_DAYS = 3;
 
 /**
  * FR-13's GET /alerts has no query params in the API Contract, and the
@@ -51,6 +55,63 @@ async function evaluateLockAlerts(userId) {
     }));
 }
 
+function dayWord(n) {
+  return n === 1 ? '1 day' : `${n} days`;
+}
+
+/**
+ * Unpaid bills (items with a due day) of the current month that are due
+ * within the next few days, due today, or already overdue. The person ends the
+ * reminder themselves with "Mark paid".
+ */
+async function evaluateBillAlerts(userId, month, now = new Date()) {
+  if (month.isLocked) return [];
+
+  const bills = await LineItem.find({
+    userId,
+    monthId: month._id,
+    dueDay: { $ne: null },
+    isPaid: false,
+  }).lean();
+
+  const alerts = [];
+  for (const bill of bills) {
+    const due = dueDateFor(month.year, month.month, bill.dueDay);
+    const days = daysBetweenUtc(now, due); // negative = overdue
+    if (days > BILL_REMINDER_DAYS) continue;
+
+    const meta = {
+      monthId: month._id,
+      potId: bill.potId,
+      lineItemId: bill._id,
+      dueDate: due,
+      daysUntilDue: days,
+    };
+
+    if (days < 0) {
+      alerts.push({
+        type: ALERT_TYPES.BILL_OVERDUE,
+        message: `${bill.name} was due ${dayWord(-days)} ago`,
+        meta,
+      });
+    } else {
+      alerts.push({
+        type: ALERT_TYPES.BILL_DUE,
+        message:
+          days === 0
+            ? `${bill.name} is due today`
+            : days === 1
+              ? `${bill.name} is due tomorrow`
+              : `${bill.name} is due in ${dayWord(days)}`,
+        meta,
+      });
+    }
+  }
+
+  // Most urgent first: longest overdue, then soonest due.
+  return alerts.sort((a, b) => a.meta.daysUntilDue - b.meta.daysUntilDue);
+}
+
 // FR-13 — evaluates all alert conditions on demand.
 async function evaluateAlerts(userId) {
   const lockAlerts = await evaluateLockAlerts(userId);
@@ -75,7 +136,7 @@ async function evaluateAlerts(userId) {
       SpendLog.findOne({ userId, monthId: month._id }).sort({ date: -1 }).lean(),
     ]);
 
-  const alerts = [...lockAlerts];
+  const alerts = [...lockAlerts, ...(await evaluateBillAlerts(userId, month))];
 
   // "Pot Spent Amount >= 80% of Budget Limit" / "> Budget Limit"
   for (const pot of pots) {

@@ -7,6 +7,7 @@ const monthService = require('../../services/month.service');
 const sinkingFundService = require('../../services/sinkingFund.service');
 const potsService = require('../pots/pots.service');
 const { projectFund, goalProgress } = require('../../utils/futureValue');
+const { dueDateFor } = require('../../utils/dateUtils');
 
 // spentAmount (INSTANT_SPEND) is derived from SpendLog at read time; it
 // never appears on a SINKING_FUND item, and target/accumulated/isReadyToUse/
@@ -21,6 +22,10 @@ function serializeLineItem(li, spentAmount = 0) {
     allocatedAmount: li.allocatedAmount,
     isRecurring: li.isRecurring,
     order: li.order,
+    // Bills: dueDay is null for items that aren't bills.
+    dueDay: li.dueDay ?? null,
+    isPaid: li.isPaid ?? false,
+    paidAt: li.paidAt ?? null,
   };
 
   if (li.type === LINE_ITEM_TYPES.INSTANT_SPEND) {
@@ -205,6 +210,7 @@ async function createLineItem(userId, monthId, potId, data) {
     accumulatedBalance: isSinkingFund ? data.allocatedAmount : 0,
     annualInterestRate: isSinkingFund ? (data.annualInterestRate ?? null) : null,
     targetDate: isSinkingFund ? (data.targetDate ?? null) : null,
+    dueDay: data.dueDay ?? null,
   });
 
   return serializeLineItem(lineItem.toObject(), 0);
@@ -277,6 +283,12 @@ async function updateLineItem(userId, monthId, potId, lineItemId, updates) {
         lineItem.monthlyContribution = updates.allocatedAmount;
       }
     }
+  }
+
+  // Removing the due day means it is no longer a bill, so drop its paid state.
+  if (updates.dueDay === null) {
+    lineItem.isPaid = false;
+    lineItem.paidAt = null;
   }
 
   Object.assign(lineItem, updates);
@@ -386,8 +398,37 @@ async function recordInterestLineItem(userId, monthId, potId, lineItemId, data) 
   return serializeLineItem(lineItem.toObject(), 0);
 }
 
+// "Mark paid" / "Mark unpaid" on a bill (an item with a due day). Purely a
+// marker the person controls — it does not create a spend or move money.
+async function markLineItemPaid(userId, monthId, potId, lineItemId, { paid }) {
+  const month = await monthService.getMonthOrThrow(userId, monthId);
+  monthService.assertMonthUnlocked(month);
+
+  const pot = await potsService.getPotOrThrow(userId, month._id, potId);
+  const lineItem = await getLineItemOrThrow(userId, pot._id, lineItemId);
+
+  if (lineItem.dueDay == null) {
+    throw new ApiError(
+      422,
+      'Set a due day on this item before marking it paid',
+      null,
+      ERROR_CODES.VALIDATION_ERROR
+    );
+  }
+
+  lineItem.isPaid = paid;
+  lineItem.paidAt = paid ? new Date() : null;
+  await lineItem.save();
+
+  return {
+    ...serializeLineItem(lineItem.toObject(), 0),
+    dueDate: dueDateFor(month.year, month.month, lineItem.dueDay),
+  };
+}
+
 module.exports = {
   serializeLineItem,
+  markLineItemPaid,
   recordInterestLineItem,
   depositLineItem,
   withdrawLineItem,

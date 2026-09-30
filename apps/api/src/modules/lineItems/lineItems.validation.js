@@ -16,6 +16,8 @@ const createLineItemSchema = z.object({
   // Fixed annual rate in % — omit/null for funds that earn no interest.
   annualInterestRate: z.number().min(0).max(100).nullable().optional(),
   targetDate: z.union([z.null(), z.coerce.date()]).optional(),
+  // Day of the month a bill is due — omit/null when it isn't a bill.
+  dueDay: z.number().int().min(1).max(31).nullable().optional(),
 });
 
 // `type` is not updatable — switching an item between INSTANT_SPEND and
@@ -30,6 +32,7 @@ const updateLineItemSchema = z
     monthlyContribution: z.number().min(0).optional(),
     annualInterestRate: z.number().min(0).max(100).nullable().optional(),
     targetDate: z.union([z.null(), z.coerce.date()]).optional(),
+    dueDay: z.number().int().min(1).max(31).nullable().optional(),
   })
   .refine((data) => Object.keys(data).length > 0, { message: 'At least one field is required' });
 
@@ -55,7 +58,10 @@ const recordInterestSchema = z.object({
   date: z.coerce.date().optional(),
 });
 
+const markPaidSchema = z.object({ paid: z.boolean() });
+
 module.exports = {
+  markPaidSchema,
   recordInterestSchema,
   createLineItemSchema,
   updateLineItemSchema,

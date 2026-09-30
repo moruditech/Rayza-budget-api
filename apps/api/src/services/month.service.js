@@ -186,6 +186,7 @@ async function cloneMonth(userId, sourceMonthId, { year, month }) {
       type: sourceLineItem.type,
       allocatedAmount: sourceLineItem.allocatedAmount,
       isRecurring: sourceLineItem.isRecurring,
+      dueDay: sourceLineItem.dueDay ?? null,
       order: sourceLineItem.order,
       targetAmount: sourceLineItem.targetAmount,
       monthlyContribution: sourceLineItem.monthlyContribution,

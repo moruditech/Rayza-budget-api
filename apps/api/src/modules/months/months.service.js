@@ -1,4 +1,5 @@
 const mongoose = require('mongoose');
+const { dueDateFor } = require('../../utils/dateUtils');
 const { SPEND_LOG_TYPES } = require('@budget-app/shared');
 const SpendLog = require('../../models/SpendLog.model');
 const Month = require('../../models/Month.model');
@@ -156,6 +157,9 @@ async function getMonthDetail(userId, monthId) {
     );
     if (li.type === 'SINKING_FUND') {
       serialized.activity = activityByItem.get(String(li._id)) || [];
+    }
+    if (li.dueDay != null) {
+      serialized.dueDate = dueDateFor(month.year, month.month, li.dueDay);
     }
     if (!lineItemsByPot.has(key)) lineItemsByPot.set(key, []);
     lineItemsByPot.get(key).push(serialized);

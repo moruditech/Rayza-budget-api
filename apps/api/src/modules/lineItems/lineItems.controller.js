@@ -86,4 +86,15 @@ const recordInterest = asyncHandler(async (req, res) => {
   return ApiResponse.success(res, result, 'Interest recorded');
 });
 
-module.exports = { list, create, update, remove, markUsed, withdraw, deposit, recordInterest };
+const markPaid = asyncHandler(async (req, res) => {
+  const result = await lineItemsService.markLineItemPaid(
+    req.userId,
+    req.params.monthId,
+    req.params.potId,
+    req.params.id,
+    req.body
+  );
+  return ApiResponse.success(res, result, req.body.paid ? 'Marked as paid' : 'Marked as unpaid');
+});
+
+module.exports = { list, create, update, remove, markUsed, withdraw, deposit, recordInterest, markPaid };

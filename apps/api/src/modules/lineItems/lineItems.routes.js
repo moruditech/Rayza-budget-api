@@ -9,6 +9,7 @@ const {
   withdrawSchema,
   depositSchema,
   recordInterestSchema,
+  markPaidSchema,
 } = require('./lineItems.validation');
 
 const router = express.Router({ mergeParams: true });
@@ -17,6 +18,7 @@ router.get('/', authenticate, ctrl.list);
 router.post('/', authenticate, validateRequest(createLineItemSchema), ctrl.create);
 router.patch('/:id', authenticate, validateRequest(updateLineItemSchema), ctrl.update);
 router.delete('/:id', authenticate, ctrl.remove);
+router.post('/:id/paid', authenticate, validateRequest(markPaidSchema), ctrl.markPaid);
 router.post('/:id/interest', authenticate, validateRequest(recordInterestSchema), ctrl.recordInterest);
 router.post('/:id/deposit', authenticate, validateRequest(depositSchema), ctrl.deposit);
 router.post('/:id/withdraw', authenticate, validateRequest(withdrawSchema), ctrl.withdraw);
